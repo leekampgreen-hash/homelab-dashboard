@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>HomeLab Dashboard</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
+
+</head>
+
+<body class="bg-light">
+
+<div class="container mt-4">
+
+    <h2>🏠 HomeLab Dashboard</h2>
+
+    <p class="text-muted">
+        Last Update :
+        <span id="last-update">{{ updated.summary }}</span>
+    </p>
+
+    <div class="row mt-3">
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    CPU Usage
+                </div>
+                <div class="card-body">
+                    <h3 id="cpu">{{ summary.cpu }} %</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    Memory Usage
+                </div>
+                <div class="card-body">
+                    <h3 id="memory">{{ summary.memory }} %</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    Datastore Usage
+                </div>
+                <div class="card-body">
+                    <h3 id="datastore">{{ summary.datastore }} %</h3>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="card mt-4">
+
+        <div class="card-header">
+            Virtual Machines
+        </div>
+
+        <table class="table table-striped table-hover mb-0">
+
+            <thead>
+                <tr>
+                    <th>VM Name</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+
+            <tbody id="vm-table">
+
+            {% for item in vm %}
+
+                <tr>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.status }}</td>
+                </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+<script>
+
+async function refreshDashboard() {
+
+    const response = await fetch("/api/dashboard");
+    const data = await response.json();
+
+    document.getElementById("cpu").innerText =
+        data.summary.cpu + " %";
+
+    document.getElementById("memory").innerText =
+        data.summary.memory + " %";
+
+    document.getElementById("datastore").innerText =
+        data.summary.datastore + " %";
+
+    document.getElementById("last-update").innerText =
+        data.updated.summary;
+
+    let html = "";
+
+    data.vm.forEach(vm => {
+
+        html += `
+            <tr>
+                <td>${vm.name}</td>
+                <td>${vm.status}</td>
+            </tr>
+        `;
+
+    });
+
+    document.getElementById("vm-table").innerHTML = html;
+
+}
+
+setInterval(refreshDashboard, 30000);
+
+</script>
+
+</body>
+
+</html>
