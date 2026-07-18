@@ -20,9 +20,25 @@ def connect_esxi():
     return si
 
 
+def get_host():
+
+    si = connect_esxi()
+
+    try:
+        content = si.RetrieveContent()
+
+        host = content.rootFolder.childEntity[0].hostFolder.childEntity[0].host[0]
+
+        return host
+
+    finally:
+        Disconnect(si)
+
+
 def get_host_summary():
 
     si = connect_esxi()
+
     try:
         content = si.RetrieveContent()
 
@@ -54,6 +70,7 @@ def get_host_summary():
             "memory": memory_percent,
             "datastore": datastore_percent
         }
+
     finally:
         Disconnect(si)
 
@@ -61,6 +78,7 @@ def get_host_summary():
 def get_vm_list():
 
     si = connect_esxi()
+
     try:
         content = si.RetrieveContent()
 
@@ -87,5 +105,6 @@ def get_vm_list():
             })
 
         return sorted(vms, key=lambda x: x["name"].lower())
+
     finally:
         Disconnect(si)

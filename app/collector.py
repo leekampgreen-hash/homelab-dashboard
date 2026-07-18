@@ -1,22 +1,36 @@
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from services.cache import save_cache
 from services.logger import logger
 from services.vmware import get_vm_list, get_host_summary
+from services.hardware import get_hardware_summary
 
 
 def write_cache():
+    now = datetime.now(ZoneInfo("Asia/Jakarta"))
+
+    summary = get_host_summary()
+    hardware = get_hardware_summary()
+    vm_list = get_vm_list()
+
+    # DEBUG
+    logger.info(f"Hardware type: {type(hardware)}")
+    logger.info(f"Hardware content: {hardware}")
+
     data = {
         "updated": {
-            "summary": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "vm": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "hardware": None
+            "summary": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "vm": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "hardware": now.strftime("%Y-%m-%d %H:%M:%S"),
         },
-        "summary": get_host_summary(),
-        "hardware": {},
-        "vm": get_vm_list()
+        "summary": summary,
+        "hardware": hardware,
+        "vm": vm_list,
     }
+
+    logger.info(f"Cache data: {data}")
 
     save_cache(data)
 
