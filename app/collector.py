@@ -1,10 +1,9 @@
-import json
 import time
 from datetime import datetime
 
+from services.cache import save_cache
+from services.logger import logger
 from services.vmware import get_vm_list, get_host_summary
-
-CACHE_FILE = "cache/dashboard.json"
 
 
 def write_cache():
@@ -19,16 +18,15 @@ def write_cache():
         "vm": get_vm_list()
     }
 
-    with open(CACHE_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    save_cache(data)
 
 
 while True:
     try:
-        print("Updating cache...", flush=True)
+        logger.info("Updating cache...")
         write_cache()
-        print("Done", flush=True)
-    except Exception as e:
-        print(f"Collector error: {e}", flush=True)
+        logger.info("Done")
+    except Exception:
+        logger.exception("Collector error")
 
     time.sleep(30)
