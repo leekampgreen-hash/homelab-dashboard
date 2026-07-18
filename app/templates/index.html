@@ -20,6 +20,18 @@
         <span id="last-update">{{ updated.summary }}</span>
     </p>
 
+    <p id="data-status" class="text-muted">
+        {% if data_current %}
+            🟢 Data Current
+        {% else %}
+            🟡 Stale Data
+        {% endif %}
+    </p>
+
+    <p class="text-muted">
+        Next refresh in: <span id="refresh-countdown">30</span> seconds
+    </p>
+
     <div class="row mt-3">
 
         <div class="col-md-4">
@@ -63,6 +75,38 @@
             Virtual Machines
         </div>
 
+        <div class="card-body pb-0">
+            <div class="row g-2 text-center">
+                <div class="col-4">
+                    <div class="border rounded p-2 bg-light">
+                        <small class="text-muted">Total VMs</small>
+                        <div id="vm-total">0</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="border rounded p-2 bg-light">
+                        <small class="text-muted">Running VMs</small>
+                        <div id="vm-running">0</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="border rounded p-2 bg-light">
+                        <small class="text-muted">Stopped VMs</small>
+                        <div id="vm-stopped">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <input
+                id="vm-search"
+                class="form-control"
+                type="search"
+                placeholder="Search VM name"
+            >
+        </div>
+
         <table class="table table-striped table-hover mb-0">
 
             <thead>
@@ -93,6 +137,52 @@
 
 <script>
 
+const refreshInterval = 30;
+let secondsUntilRefresh = refreshInterval;
+
+function updateRefreshCountdown() {
+
+    document.getElementById("refresh-countdown").innerText =
+        secondsUntilRefresh;
+
+}
+
+function filterVmRows() {
+
+    const query = document.getElementById("vm-search").value.toLowerCase();
+    const rows = document.querySelectorAll("#vm-table tr");
+
+    rows.forEach(row => {
+
+        const name = row.cells[0].innerText.toLowerCase();
+
+        row.style.display = name.includes(query) ? "" : "none";
+
+    });
+
+}
+
+function updateVmStatusSummary() {
+
+    const rows = document.querySelectorAll("#vm-table tr");
+    let running = 0;
+
+    rows.forEach(row => {
+
+        const status = row.cells[1].innerText;
+
+        if (status.includes("Running")) {
+            running++;
+        }
+
+    });
+
+    document.getElementById("vm-total").innerText = rows.length;
+    document.getElementById("vm-running").innerText = running;
+    document.getElementById("vm-stopped").innerText = rows.length - running;
+
+}
+
 async function refreshDashboard() {
 
     const response = await fetch("/api/dashboard");
@@ -110,6 +200,15 @@ async function refreshDashboard() {
     document.getElementById("last-update").innerText =
         data.updated.summary;
 
+    const updatedAt = new Date(
+        data.updated.summary.replace(" ", "T") + "+07:00"
+    );
+
+    const isCurrent = Date.now() - updatedAt.getTime() <= 90000;
+
+    document.getElementById("data-status").innerText =
+        isCurrent ? "🟢 Data Current" : "🟡 Stale Data";
+
     let html = "";
 
     data.vm.forEach(vm => {
@@ -125,9 +224,31 @@ async function refreshDashboard() {
 
     document.getElementById("vm-table").innerHTML = html;
 
+    updateVmStatusSummary();
+    filterVmRows();
+
+    secondsUntilRefresh = refreshInterval;
+    updateRefreshCountdown();
+
 }
 
-setInterval(refreshDashboard, 30000);
+document.getElementById("vm-search").addEventListener("input", filterVmRows);
+
+updateVmStatusSummary();
+
+setInterval(() => {
+
+    secondsUntilRefresh--;
+
+    if (secondsUntilRefresh < 0) {
+        secondsUntilRefresh = 0;
+    }
+
+    updateRefreshCountdown();
+
+}, 1000);
+
+setInterval(refreshDashboard, refreshInterval * 1000);
 
 </script>
 
