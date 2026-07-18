@@ -122,7 +122,17 @@
 
                 <tr>
                     <td>{{ item.name }}</td>
-                    <td>{{ item.status }}</td>
+                    <td>
+                        {% if "Running" in item.status %}
+                            <span class="badge bg-success">{{ item.status }}</span>
+                        {% elif "Stopped" in item.status or "Powered Off" in item.status %}
+                            <span class="badge bg-danger">{{ item.status }}</span>
+                        {% elif "Suspended" in item.status %}
+                            <span class="badge bg-warning text-dark">{{ item.status }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ item.status }}</span>
+                        {% endif %}
+                    </td>
                 </tr>
 
             {% endfor %}
@@ -183,6 +193,24 @@ function updateVmStatusSummary() {
 
 }
 
+function getStatusBadgeClass(status) {
+
+    if (status.includes("Running")) {
+        return "bg-success";
+    }
+
+    if (status.includes("Stopped") || status.includes("Powered Off")) {
+        return "bg-danger";
+    }
+
+    if (status.includes("Suspended")) {
+        return "bg-warning text-dark";
+    }
+
+    return "bg-secondary";
+
+}
+
 async function refreshDashboard() {
 
     const response = await fetch("/api/dashboard");
@@ -216,7 +244,11 @@ async function refreshDashboard() {
         html += `
             <tr>
                 <td>${vm.name}</td>
-                <td>${vm.status}</td>
+                <td>
+                    <span class="badge ${getStatusBadgeClass(vm.status)}">
+                        ${vm.status}
+                    </span>
+                </td>
             </tr>
         `;
 
