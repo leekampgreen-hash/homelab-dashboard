@@ -1,19 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 
-import json
+from services.cache import load_cache
 
 app = FastAPI(title="HomeLab Dashboard")
 
 templates = Jinja2Templates(directory="templates")
-
-CACHE_FILE = "cache/dashboard.json"
-
-
-def load_cache():
-
-    with open(CACHE_FILE, "r") as f:
-        return json.load(f)
 
 
 @app.get("/")
@@ -38,3 +30,11 @@ async def home(request: Request):
 async def api_dashboard():
 
     return load_cache()
+
+
+@app.get("/health")
+async def health():
+
+    return {
+        "status": "healthy"
+    }
