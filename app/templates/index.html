@@ -78,19 +78,34 @@
         <div class="card-body pb-0">
             <div class="row g-2 text-center">
                 <div class="col-4">
-                    <div class="border rounded p-2 bg-light">
+                    <div
+                        class="border rounded p-2 bg-light"
+                        data-vm-filter="all"
+                        role="button"
+                        style="cursor: pointer;"
+                    >
                         <small class="text-muted">Total VMs</small>
                         <div id="vm-total">0</div>
                     </div>
                 </div>
                 <div class="col-4">
-                    <div class="border rounded p-2 bg-light">
+                    <div
+                        class="border rounded p-2 bg-light"
+                        data-vm-filter="running"
+                        role="button"
+                        style="cursor: pointer;"
+                    >
                         <small class="text-muted">Running VMs</small>
                         <div id="vm-running">0</div>
                     </div>
                 </div>
                 <div class="col-4">
-                    <div class="border rounded p-2 bg-light">
+                    <div
+                        class="border rounded p-2 bg-light"
+                        data-vm-filter="stopped"
+                        role="button"
+                        style="cursor: pointer;"
+                    >
                         <small class="text-muted">Stopped VMs</small>
                         <div id="vm-stopped">0</div>
                     </div>
@@ -149,6 +164,7 @@
 
 const refreshInterval = 30;
 let secondsUntilRefresh = refreshInterval;
+let statusFilter = "all";
 
 function updateRefreshCountdown() {
 
@@ -165,8 +181,20 @@ function filterVmRows() {
     rows.forEach(row => {
 
         const name = row.cells[0].innerText.toLowerCase();
+        const status = row.cells[1].innerText;
+        const matchesSearch = name.includes(query);
+        let matchesStatus = true;
 
-        row.style.display = name.includes(query) ? "" : "none";
+        if (statusFilter === "running") {
+            matchesStatus = status.includes("Running");
+        }
+
+        if (statusFilter === "stopped") {
+            matchesStatus = status.includes("Stopped") ||
+                status.includes("Powered Off");
+        }
+
+        row.style.display = matchesSearch && matchesStatus ? "" : "none";
 
     });
 
@@ -265,6 +293,17 @@ async function refreshDashboard() {
 }
 
 document.getElementById("vm-search").addEventListener("input", filterVmRows);
+
+document.querySelectorAll("[data-vm-filter]").forEach(card => {
+
+    card.addEventListener("click", () => {
+
+        statusFilter = card.dataset.vmFilter;
+        filterVmRows();
+
+    });
+
+});
 
 updateVmStatusSummary();
 
