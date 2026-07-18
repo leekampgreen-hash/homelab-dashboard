@@ -79,7 +79,7 @@
             <div class="row g-2 text-center">
                 <div class="col-4">
                     <div
-                        class="border rounded p-2 bg-light"
+                        class="border border-primary border-2 rounded p-2 bg-light shadow-sm"
                         data-vm-filter="all"
                         role="button"
                         style="cursor: pointer;"
@@ -200,6 +200,18 @@ function filterVmRows() {
 
 }
 
+function setActiveVmFilterCard(activeCard) {
+
+    document.querySelectorAll("[data-vm-filter]").forEach(card => {
+
+        card.classList.remove("border-primary", "border-2", "shadow-sm");
+
+    });
+
+    activeCard.classList.add("border-primary", "border-2", "shadow-sm");
+
+}
+
 function updateVmStatusSummary() {
 
     const rows = document.querySelectorAll("#vm-table tr");
@@ -299,11 +311,14 @@ document.querySelectorAll("[data-vm-filter]").forEach(card => {
     card.addEventListener("click", () => {
 
         statusFilter = card.dataset.vmFilter;
+        setActiveVmFilterCard(card);
         filterVmRows();
 
     });
 
 });
+
+setActiveVmFilterCard(document.querySelector('[data-vm-filter="all"]'));
 
 updateVmStatusSummary();
 
