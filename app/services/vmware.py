@@ -94,17 +94,56 @@ def get_vm_list():
 
         for vm in view.view:
 
+            power_state = str(vm.runtime.powerState)
             status = "🟢 Running"
 
-            if vm.runtime.powerState != "poweredOn":
+            if power_state == "poweredOff":
                 status = "🔴 Powered Off"
+            elif power_state == "suspended":
+                status = "🟡 Suspended"
 
             vms.append({
+                "id": vm._moId,
                 "name": vm.name,
-                "status": status
+                "status": status,
+                "power_state": power_state
             })
 
         return sorted(vms, key=lambda x: x["name"].lower())
+
+    finally:
+        Disconnect(si)
+
+
+def power_vm(vm_id, action):
+
+    si = connect_esxi()
+
+    try:
+        content = si.RetrieveContent()
+        vm = content.searchIndex.FindByMoId(vm_id)
+
+        if vm is None or not isinstance(vm, vim.VirtualMachine):
+            raise ValueError("Virtual machine not found")
+
+        power_state = str(vm.runtime.powerState)
+
+        if action == "start":
+            if power_state != "poweredOff":
+                raise ValueError("Virtual machine is not powered off")
+            task = vm.PowerOnVM_Task()
+        elif action == "stop":
+            if power_state != "poweredOn":
+                raise ValueError("Virtual machine is not powered on")
+            task = vm.PowerOffVM_Task()
+        elif action == "restart":
+            if power_state != "poweredOn":
+                raise ValueError("Virtual machine is not powered on")
+            task = vm.ResetVM_Task()
+        else:
+            raise ValueError("Invalid power action")
+
+        return task.info.key
 
     finally:
         Disconnect(si)

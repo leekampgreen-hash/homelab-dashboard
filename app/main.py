@@ -1,10 +1,11 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
 from services.cache import load_cache
+from services.vmware import power_vm
 
 app = FastAPI(title="HomeLab Dashboard")
 
@@ -55,6 +56,24 @@ async def home(request: Request):
 async def api_dashboard():
 
     return load_cache()
+
+
+@app.post("/api/vm/{vm_id}/power")
+async def api_vm_power(vm_id: str, request: Request):
+    payload = await request.json()
+    action = payload.get("action")
+
+    try:
+        task_key = power_vm(vm_id, action)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="VM power action failed") from exc
+
+    return {
+        "status": "accepted",
+        "task": task_key
+    }
 
 
 @app.get("/health")
