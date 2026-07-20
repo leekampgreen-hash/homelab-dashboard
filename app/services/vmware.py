@@ -121,9 +121,25 @@ def power_vm(vm_id, action):
 
     try:
         content = si.RetrieveContent()
-        vm = content.searchIndex.FindByMoId(vm_id)
 
-        if vm is None or not isinstance(vm, vim.VirtualMachine):
+        container = content.rootFolder
+
+        view = content.viewManager.CreateContainerView(
+            container,
+            [vim.VirtualMachine],
+            True
+        )
+
+        vm = None
+
+        for item in view.view:
+            if item._moId == vm_id:
+                vm = item
+                break
+
+        view.Destroy()
+
+        if vm is None:
             raise ValueError("Virtual machine not found")
 
         power_state = str(vm.runtime.powerState)
@@ -131,15 +147,21 @@ def power_vm(vm_id, action):
         if action == "start":
             if power_state != "poweredOff":
                 raise ValueError("Virtual machine is not powered off")
+
             task = vm.PowerOnVM_Task()
+
         elif action == "stop":
             if power_state != "poweredOn":
                 raise ValueError("Virtual machine is not powered on")
+
             task = vm.PowerOffVM_Task()
+
         elif action == "restart":
             if power_state != "poweredOn":
                 raise ValueError("Virtual machine is not powered on")
+
             task = vm.ResetVM_Task()
+
         else:
             raise ValueError("Invalid power action")
 
