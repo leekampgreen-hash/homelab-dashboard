@@ -97,6 +97,37 @@ def get_vm_list():
             power_state = str(vm.runtime.powerState)
             status = "🟢 Running"
 
+            cpu = "--"
+            memory = "--"
+            ip = "--"
+            guest = "--"
+            host = "--"
+
+            try:
+                cpu = vm.config.hardware.numCPU
+            except (AttributeError, TypeError):
+                pass
+
+            try:
+                memory = vm.config.hardware.memoryMB
+            except (AttributeError, TypeError):
+                pass
+
+            try:
+                ip = vm.guest.ipAddress or "--"
+            except (AttributeError, TypeError):
+                pass
+
+            try:
+                guest = vm.config.guestFullName or "--"
+            except (AttributeError, TypeError):
+                pass
+
+            try:
+                host = vm.runtime.host.name or "--"
+            except (AttributeError, TypeError):
+                pass
+
             if power_state == "poweredOff":
                 status = "🔴 Powered Off"
             elif power_state == "suspended":
@@ -106,7 +137,12 @@ def get_vm_list():
                 "id": vm._moId,
                 "name": vm.name,
                 "status": status,
-                "power_state": power_state
+                "power_state": power_state,
+                "cpu": cpu,
+                "memory": memory,
+                "ip": ip,
+                "guest": guest,
+                "host": host
             })
 
         return sorted(vms, key=lambda x: x["name"].lower())
