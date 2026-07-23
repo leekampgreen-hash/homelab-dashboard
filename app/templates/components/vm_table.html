@@ -1,181 +1,133 @@
 <div class="card mt-4">
 
-    <div class="card-header d-flex justify-content-between align-items-center">
-
-        <div>
-            <h5 class="mb-0">
-                🖥️ Virtual Machines
-            </h5>
-
-            <small class="text-muted">
-                VMware Inventory
-            </small>
-        </div>
-
-
-        <button
-            id="btn-refresh"
-            class="btn btn-primary">
-
-            <i class="bi bi-arrow-clockwise"></i>
-            Refresh
-
-        </button>
-
+    <div class="card-header">
+        Virtual Machines
     </div>
 
+    <div class="card-body pb-0">
+        <div class="row g-2 text-center">
+            <div class="col-4">
+                <div
+                    class="border border-primary border-2 rounded p-2 bg-light shadow-sm"
+                    data-vm-filter="all"
+                    role="button"
+                    style="cursor: pointer;"
+                >
+                    <small class="text-muted">Total VMs</small>
+                    <div id="vm-total">0</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div
+                    class="border rounded p-2 bg-light"
+                    data-vm-filter="running"
+                    role="button"
+                    style="cursor: pointer;"
+                >
+                    <small class="text-muted">Running VMs</small>
+                    <div id="vm-running">0</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div
+                    class="border rounded p-2 bg-light"
+                    data-vm-filter="stopped"
+                    role="button"
+                    style="cursor: pointer;"
+                >
+                    <small class="text-muted">Stopped VMs</small>
+                    <div id="vm-stopped">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="card-body">
-
-
-        <div class="row mb-3">
-
-            <div class="col-md-4">
-
-                <input
-                    id="searchVM"
-                    class="form-control"
-                    type="text"
-                    placeholder="Search VM...">
-
-            </div>
-
-
-            <div class="col-md-3">
-
-                <select
-                    id="powerFilter"
-                    class="form-select">
-
-                    <option value="">
-                        All Status
-                    </option>
-
-                    <option value="poweredOn">
-                        Powered On
-                    </option>
-
-                    <option value="poweredOff">
-                        Powered Off
-                    </option>
-
-                </select>
-
-            </div>
-
-        </div>
-
-
-        <div class="table-responsive">
-
-            <table
-                id="vmTable"
-                class="table table-striped table-hover align-middle">
-
-
-                <thead class="table-dark">
-
-                    <tr>
-
-                        <th>
-                            Name
-                        </th>
-
-                        <th>
-                            Status
-                        </th>
-
-                        <th>
-                            Power State
-                        </th>
-
-                        <th>
-                            Action
-                        </th>
-
-                    </tr>
-
-                </thead>
-
-
-                <tbody id="vmTableBody">
-
-
-                {% for vm in vm %}
-
-                    <tr>
-
-
-                        <td>
-                            {{ vm.name }}
-                        </td>
-
-
-                        <td>
-                            {{ vm.status }}
-                        </td>
-
-
-                        <td>
-                            {{ vm.power_state }}
-                        </td>
-
-
-                        <td>
-
-
-                            <div class="btn-group btn-group-sm">
-
-
-                                <button
-                                    class="btn btn-success"
-                                    onclick="powerAction('{{ vm.id }}','start')">
-
-                                    Start
-
-                                </button>
-
-
-                                <button
-                                    class="btn btn-warning"
-                                    onclick="powerAction('{{ vm.id }}','restart')">
-
-                                    Restart
-
-                                </button>
-
-
-                                <button
-                                    class="btn btn-danger"
-                                    onclick="powerAction('{{ vm.id }}','stop')">
-
-                                    Stop
-
-                                </button>
-
-
-                            </div>
-
-
-                        </td>
-
-
-                    </tr>
-
-
-                {% endfor %}
-
-
-                </tbody>
-
-
-            </table>
-
-
-        </div>
-
-
+        <input
+            id="vm-search"
+            class="form-control"
+            type="search"
+            placeholder="Search VM name"
+        >
     </div>
 
+    <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0">
+
+            <thead>
+                <tr>
+                    <th>VM Name</th>
+                    <th>Status</th>
+                    <th>CPU</th>
+                    <th>Memory</th>
+                    <th>IP Address</th>
+                    <th>Guest OS</th>
+                    <th>Host</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody id="vm-table">
+
+            {% for vm in vm %}
+
+                <tr>
+                    <td>{{ vm.name }}</td>
+                    <td>
+                        {% if "Running" in vm.status %}
+                            <span class="badge bg-success">{{ vm.status }}</span>
+                        {% elif "Stopped" in vm.status or "Powered Off" in vm.status %}
+                            <span class="badge bg-danger">{{ vm.status }}</span>
+                        {% elif "Suspended" in vm.status %}
+                            <span class="badge bg-warning text-dark">{{ vm.status }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ vm.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ vm.cpu | default("--") }}</td>
+                    <td>{{ vm.memory | default("--") }}</td>
+                    <td>{{ vm.ip_address | default("--") }}</td>
+                    <td>{{ vm.guest_os | default("--") }}</td>
+                    <td>{{ vm.host | default("--") }}</td>
+                    <td>
+                        <div
+                            class="vm-actions"
+                            data-vm-id="{{ vm.id }}"
+                            data-power-state="{{ vm.power_state }}"
+                        >
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-success me-1"
+                                data-vm-id="{{ vm.id }}"
+                                data-vm-action="start"
+                            >
+                                Start
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-warning me-1"
+                                data-vm-id="{{ vm.id }}"
+                                data-vm-action="restart"
+                            >
+                                Restart
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-danger me-1"
+                                data-vm-id="{{ vm.id }}"
+                                data-vm-action="stop"
+                            >
+                                Stop
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+    </div>
 
 </div>
