@@ -105,12 +105,16 @@ function renderVmRows(vms) {
 function renderAlerts(alerts) {
     const alertCount = document.getElementById("alert-count");
     const alertList = document.getElementById("alert-list");
+    const systemHealth = document.getElementById("system-health");
+    const criticalAlerts = alerts.filter(alert => alert.severity === "critical");
 
     alertCount.innerText = alerts.length;
     alertList.innerHTML = "";
 
     if (alerts.length === 0) {
         alertCount.className = "badge text-bg-success";
+        systemHealth.className = "badge text-bg-success";
+        systemHealth.innerText = "🟢 System Health: Healthy (0 alerts)";
         const emptyMessage = document.createElement("span");
         emptyMessage.className = "text-success";
         emptyMessage.innerText = "No active alerts";
@@ -118,7 +122,17 @@ function renderAlerts(alerts) {
         return;
     }
 
-    alertCount.className = "badge text-bg-danger";
+    if (criticalAlerts.length > 0) {
+        alertCount.className = "badge text-bg-danger";
+        systemHealth.className = "badge text-bg-danger";
+        systemHealth.innerText =
+            `🔴 System Health: Critical (${alerts.length} alerts)`;
+    } else {
+        alertCount.className = "badge text-bg-warning";
+        systemHealth.className = "badge text-bg-warning";
+        systemHealth.innerText =
+            `🟡 System Health: Warning (${alerts.length} alerts)`;
+    }
 
     const list = document.createElement("div");
     list.className = "list-group list-group-flush";
