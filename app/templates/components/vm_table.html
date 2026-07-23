@@ -1,0 +1,181 @@
+<div class="card mt-4">
+
+    <div class="card-header d-flex justify-content-between align-items-center">
+
+        <div>
+            <h5 class="mb-0">
+                🖥️ Virtual Machines
+            </h5>
+
+            <small class="text-muted">
+                VMware Inventory
+            </small>
+        </div>
+
+
+        <button
+            id="btn-refresh"
+            class="btn btn-primary">
+
+            <i class="bi bi-arrow-clockwise"></i>
+            Refresh
+
+        </button>
+
+    </div>
+
+
+    <div class="card-body">
+
+
+        <div class="row mb-3">
+
+            <div class="col-md-4">
+
+                <input
+                    id="searchVM"
+                    class="form-control"
+                    type="text"
+                    placeholder="Search VM...">
+
+            </div>
+
+
+            <div class="col-md-3">
+
+                <select
+                    id="powerFilter"
+                    class="form-select">
+
+                    <option value="">
+                        All Status
+                    </option>
+
+                    <option value="poweredOn">
+                        Powered On
+                    </option>
+
+                    <option value="poweredOff">
+                        Powered Off
+                    </option>
+
+                </select>
+
+            </div>
+
+        </div>
+
+
+        <div class="table-responsive">
+
+            <table
+                id="vmTable"
+                class="table table-striped table-hover align-middle">
+
+
+                <thead class="table-dark">
+
+                    <tr>
+
+                        <th>
+                            Name
+                        </th>
+
+                        <th>
+                            Status
+                        </th>
+
+                        <th>
+                            Power State
+                        </th>
+
+                        <th>
+                            Action
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody id="vmTableBody">
+
+
+                {% for vm in vm %}
+
+                    <tr>
+
+
+                        <td>
+                            {{ vm.name }}
+                        </td>
+
+
+                        <td>
+                            {{ vm.status }}
+                        </td>
+
+
+                        <td>
+                            {{ vm.power_state }}
+                        </td>
+
+
+                        <td>
+
+
+                            <div class="btn-group btn-group-sm">
+
+
+                                <button
+                                    class="btn btn-success"
+                                    onclick="powerAction('{{ vm.id }}','start')">
+
+                                    Start
+
+                                </button>
+
+
+                                <button
+                                    class="btn btn-warning"
+                                    onclick="powerAction('{{ vm.id }}','restart')">
+
+                                    Restart
+
+                                </button>
+
+
+                                <button
+                                    class="btn btn-danger"
+                                    onclick="powerAction('{{ vm.id }}','stop')">
+
+                                    Stop
+
+                                </button>
+
+
+                            </div>
+
+
+                        </td>
+
+
+                    </tr>
+
+
+                {% endfor %}
+
+
+                </tbody>
+
+
+            </table>
+
+
+        </div>
+
+
+    </div>
+
+
+</div>

@@ -1,0 +1,135 @@
+<div class="row mt-3">
+
+    <!-- CPU -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                CPU Usage
+            </div>
+            <div class="card-body text-center">
+                <h3 id="cpu">
+                    {{ summary.cpu }} %
+                </h3>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Memory -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                Memory Usage
+            </div>
+            <div class="card-body text-center">
+                <h3 id="memory">
+                    {{ summary.memory }} %
+                </h3>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Datastore -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                Datastore Usage
+            </div>
+            <div class="card-body text-center">
+                <h3 id="datastore">
+                    {{ summary.datastore }} %
+                </h3>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Power -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                ⚡ Power Consumption
+            </div>
+            <div class="card-body text-center">
+                <h3 id="power">
+                    {{ hardware.power.watt }} W
+                </h3>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+<div class="row mt-3">
+
+    <!-- Temperature -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                🌡 Temperature
+            </div>
+
+            <div class="card-body">
+
+                <div>
+                    CPU:
+                    <span id="temp-cpu">
+                        {{ hardware.temperature.cpu }} °C
+                    </span>
+                </div>
+
+                <div>
+                    Ambient:
+                    <span id="temp-ambient">
+                        {{ hardware.temperature.ambient }} °C
+                    </span>
+                </div>
+
+                <div>
+                    Storage:
+                    <span id="temp-storage">
+                        {{ hardware.temperature.storage }} °C
+                    </span>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Hardware Health -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                Hardware Health
+            </div>
+
+            <div class="card-body">
+
+                <div>
+                    Storage:
+                    {{ hardware.health.storage }}
+                </div>
+
+                <div>
+                    Memory:
+                    {{ hardware.health.memory }}
+                </div>
+
+                <div>
+                    Fan:
+                    {{ hardware.health.fan }}
+                </div>
+
+                <div>
+                    Power:
+                    {{ hardware.health.power }}
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+</div>
