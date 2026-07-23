@@ -102,6 +102,46 @@ function renderVmRows(vms) {
     filterVmRows();
 }
 
+function renderAlerts(alerts) {
+    const alertCount = document.getElementById("alert-count");
+    const alertList = document.getElementById("alert-list");
+
+    alertCount.innerText = alerts.length;
+    alertList.innerHTML = "";
+
+    if (alerts.length === 0) {
+        alertCount.className = "badge text-bg-success";
+        const emptyMessage = document.createElement("span");
+        emptyMessage.className = "text-success";
+        emptyMessage.innerText = "No active alerts";
+        alertList.appendChild(emptyMessage);
+        return;
+    }
+
+    alertCount.className = "badge text-bg-danger";
+
+    const list = document.createElement("div");
+    list.className = "list-group list-group-flush";
+
+    alerts.forEach(alert => {
+        const item = document.createElement("div");
+        const severity = document.createElement("span");
+        const source = document.createElement("strong");
+
+        item.className = "list-group-item px-0";
+        severity.className = alert.severity === "critical"
+            ? "badge text-bg-danger me-2"
+            : "badge text-bg-warning me-2";
+        severity.innerText = alert.severity;
+        source.innerText = `${alert.source}: `;
+
+        item.append(severity, source, alert.message);
+        list.appendChild(item);
+    });
+
+    alertList.appendChild(list);
+}
+
 function updateDashboardValues(data) {
     document.getElementById("cpu").innerText = `${data.summary.cpu} %`;
     document.getElementById("memory").innerText = `${data.summary.memory} %`;
@@ -122,6 +162,7 @@ async function refreshDashboard() {
         const data = await response.json();
         updateDashboardValues(data);
         renderVmRows(data.vm);
+        renderAlerts(data.alerts || []);
         secondsUntilRefresh = refreshInterval;
         updateRefreshCountdown();
     } catch (error) {
@@ -177,6 +218,7 @@ setActiveVmFilterCard(document.querySelector('[data-vm-filter="all"]'));
 renderVmActions();
 updateVmStatusSummary();
 updateRefreshCountdown();
+refreshDashboard();
 setInterval(() => {
     secondsUntilRefresh = Math.max(secondsUntilRefresh - 1, 0);
     updateRefreshCountdown();

@@ -130,6 +130,24 @@
 
 <div class="row mt-3">
 
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Alerts</span>
+                <span id="alert-count" class="badge text-bg-success">0</span>
+            </div>
+
+            <div id="alert-list" class="card-body">
+                <span class="text-success">No active alerts</span>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+<div class="row mt-3">
+
     {% set ilo = hardware.ilo | default({}) %}
     {% set ilo_chassis = ilo.get("chassis", {}) %}
     {% set ilo_fan = ilo.get("fan", {}) %}
