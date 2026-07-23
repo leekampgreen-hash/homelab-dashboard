@@ -130,6 +130,13 @@
 
 <div class="row mt-3">
 
+    {% set ilo = hardware.ilo | default({}) %}
+    {% set ilo_chassis = ilo.get("chassis", {}) %}
+    {% set ilo_fan = ilo.get("fan", {}) %}
+    {% set ilo_temperature = ilo.get("temperature", {}) %}
+    {% set ilo_power = ilo.get("power", {}) %}
+    {% set ilo_psu = ilo.get("psu", {}) %}
+
     <!-- Temperature -->
     <div class="col-md-4">
         <div class="card">
@@ -158,6 +165,59 @@
                     <span id="temp-storage">
                         {{ hardware.temperature.storage }} °C
                     </span>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+
+    <!-- iLO Hardware Health -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                iLO Hardware Health
+            </div>
+
+            <div class="card-body">
+
+                <div class="mb-2">
+                    <strong>Status:</strong>
+                    <span class="badge {% if ilo.get('status', 'Unknown') == 'OK' %}text-bg-success{% elif ilo.get('status', 'Unknown') == 'Unknown' %}text-bg-secondary{% else %}text-bg-danger{% endif %}">
+                        {{ ilo.get("status", "Unknown") }}
+                    </span>
+                </div>
+
+                <div class="mb-2">
+                    <strong>Chassis:</strong>
+                    {{ ilo_chassis.get("model", "Unknown") }}
+                </div>
+
+                <div>
+                    <strong>Fan:</strong>
+                    {{ ilo_fan.get("status", "Unknown") }}
+                    ({{ ilo_fan.get("count", 0) }})
+                </div>
+
+                <div>
+                    <strong>PSU:</strong>
+                    {{ ilo_psu.get("status", "Unknown") }}
+                    ({{ ilo_psu.get("count", 0) }})
+                </div>
+
+                <div>
+                    <strong>CPU Temp:</strong>
+                    {{ ilo_temperature.get("cpu", "--") }} °C
+                </div>
+
+                <div>
+                    <strong>Ambient:</strong>
+                    {{ ilo_temperature.get("ambient", "--") }} °C
+                </div>
+
+                <div>
+                    <strong>Power:</strong>
+                    {{ ilo_power.get("current", "--") }} W
                 </div>
 
             </div>
