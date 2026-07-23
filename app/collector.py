@@ -6,6 +6,7 @@ from services.cache import save_cache
 from services.logger import logger
 from services.vmware import get_vm_list, get_host_summary
 from services.hardware import get_hardware_summary
+from services.ilo import get_ilo_health
 
 
 def write_cache():
@@ -13,7 +14,10 @@ def write_cache():
 
     summary = get_host_summary()
     hardware = get_hardware_summary()
+    ilo_health = get_ilo_health()
     vm_list = get_vm_list()
+
+    hardware["ilo"] = ilo_health
 
     # DEBUG
     logger.info(f"Hardware type: {type(hardware)}")
