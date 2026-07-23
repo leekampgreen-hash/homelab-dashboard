@@ -68,17 +68,16 @@ def parse_thermal(thermal):
             fan_health = "Critical"
             break
 
+
     cpu_temp = None
     ambient_temp = None
     storage_temp = None
-
 
 
     for sensor in temperatures:
 
         name = sensor.get("Name", "")
         temp = sensor.get("ReadingCelsius")
-
 
 
         if "CPU 1" in name:
@@ -88,7 +87,6 @@ def parse_thermal(thermal):
             ambient_temp = temp
 
         elif "HD Controller" in name:
-
             storage_temp = temp
 
 
@@ -98,7 +96,6 @@ def parse_thermal(thermal):
             "count": len(fans)
         },
         "temperature": {
-
             "cpu": cpu_temp,
             "ambient": ambient_temp,
             "storage": storage_temp
@@ -120,3 +117,34 @@ def get_power():
     response.raise_for_status()
 
     return response.json()
+
+
+def parse_power(power):
+
+    power_supplies = power.get("PowerSupplies", [])
+
+    psu_health = "OK"
+
+    for psu in power_supplies:
+
+        health = psu.get("Status", {}).get("Health")
+
+        if health != "OK":
+            psu_health = "Critical"
+            break
+
+
+    metrics = power.get("PowerMetrics", {})
+
+
+    return {
+        "power": {
+            "current": power.get("PowerConsumedWatts"),
+            "average": metrics.get("AverageConsumedWatts"),
+            "max": metrics.get("MaxConsumedWatts")
+        },
+        "psu": {
+            "status": psu_health,
+            "count": len(power_supplies)
+        }
+    }
