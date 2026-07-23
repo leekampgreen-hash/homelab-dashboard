@@ -79,24 +79,53 @@ function updateVmStatusSummary() {
 function renderVmRows(vms) {
     const tableBody = document.getElementById("vm-table");
     tableBody.innerHTML = "";
+
     vms.forEach(vm => {
         const row = document.createElement("tr");
         const nameCell = document.createElement("td");
         const statusCell = document.createElement("td");
+        const cpuCell = document.createElement("td");
+        const memoryCell = document.createElement("td");
+        const ipCell = document.createElement("td");
+        const guestCell = document.createElement("td");
+        const hostCell = document.createElement("td");
         const actionCell = document.createElement("td");
         const badge = document.createElement("span");
         const actionContainer = document.createElement("div");
+        const memoryMb = Number(vm.memory);
+        const memoryGb = memoryMb / 1024;
+
         nameCell.innerText = vm.name;
         badge.className = `badge ${getStatusBadgeClass(vm.status)}`;
         badge.innerText = vm.status;
         statusCell.appendChild(badge);
+
+        cpuCell.innerText = vm.cpu && vm.cpu !== "--" ? `${vm.cpu} vCPU` : "--";
+        memoryCell.innerText = Number.isFinite(memoryGb)
+            ? `${Number.isInteger(memoryGb) ? memoryGb : memoryGb.toFixed(1)} GB`
+            : "--";
+        ipCell.innerText = vm.ip || "--";
+        guestCell.innerText = vm.guest || "--";
+        hostCell.innerText = vm.host || "--";
+
         actionContainer.className = "vm-actions";
         actionContainer.dataset.vmId = vm.id;
         actionContainer.dataset.powerState = vm.power_state;
         actionCell.appendChild(actionContainer);
-        row.append(nameCell, statusCell, actionCell);
+
+        row.append(
+            nameCell,
+            statusCell,
+            cpuCell,
+            memoryCell,
+            ipCell,
+            guestCell,
+            hostCell,
+            actionCell
+        );
         tableBody.appendChild(row);
     });
+
     renderVmActions();
     updateVmStatusSummary();
     filterVmRows();
