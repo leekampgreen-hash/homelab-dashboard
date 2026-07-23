@@ -75,17 +75,29 @@
                     <td>{{ vm.name }}</td>
                     <td>
                         {% if "Running" in vm.status %}
-                            <span class="badge bg-success">{{ vm.status }}</span>
+                            <span class="badge rounded-pill text-bg-success">{{ vm.status }}</span>
                         {% elif "Stopped" in vm.status or "Powered Off" in vm.status %}
-                            <span class="badge bg-danger">{{ vm.status }}</span>
+                            <span class="badge rounded-pill text-bg-secondary">{{ vm.status }}</span>
                         {% elif "Suspended" in vm.status %}
-                            <span class="badge bg-warning text-dark">{{ vm.status }}</span>
+                            <span class="badge rounded-pill text-bg-warning">{{ vm.status }}</span>
                         {% else %}
-                            <span class="badge bg-secondary">{{ vm.status }}</span>
+                            <span class="badge rounded-pill text-bg-info">{{ vm.status }}</span>
                         {% endif %}
                     </td>
-                    <td>{{ vm.cpu | default("--") }}</td>
-                    <td>{{ vm.memory | default("--") }}</td>
+                    <td>
+                        {% if vm.cpu is defined and vm.cpu != "--" %}
+                            {{ vm.cpu }} vCPU
+                        {% else %}
+                            --
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if vm.memory is defined and vm.memory != "--" %}
+                            {{ (vm.memory / 1024) | round(1) }} GB
+                        {% else %}
+                            --
+                        {% endif %}
+                    </td>
                     <td>{{ vm.ip_address | default("--") }}</td>
                     <td>{{ vm.guest_os | default("--") }}</td>
                     <td>{{ vm.host | default("--") }}</td>
