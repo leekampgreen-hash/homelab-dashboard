@@ -1,0 +1,185 @@
+<script>
+const refreshInterval = 30;
+let secondsUntilRefresh = refreshInterval;
+let statusFilter = "all";
+let selectedPowerAction = null;
+
+const powerConfirmModal = new bootstrap.Modal(
+    document.getElementById("powerConfirmModal")
+);
+
+function updateRefreshCountdown() {
+    document.getElementById("refresh-countdown").innerText =
+        `${secondsUntilRefresh}s`;
+}
+
+function getStatusBadgeClass(status) {
+    if (status.includes("Running")) return "bg-success";
+    if (status.includes("Stopped") || status.includes("Powered Off")) return "bg-danger";
+    if (status.includes("Suspended")) return "bg-warning text-dark";
+    return "bg-secondary";
+}
+
+function getPowerActions(powerState) {
+    if (powerState === "poweredOn") {
+        return [
+            { action: "stop", label: "Stop", className: "btn-danger" },
+            { action: "restart", label: "Restart", className: "btn-warning" }
+        ];
+    }
+    if (powerState === "poweredOff") {
+        return [{ action: "start", label: "Start", className: "btn-success" }];
+    }
+    return [];
+}
+
+function renderVmActions() {
+    document.querySelectorAll(".vm-actions").forEach(container => {
+        const vmId = container.dataset.vmId;
+        const actions = getPowerActions(container.dataset.powerState);
+        container.innerHTML = actions.map(item => `
+            <button type="button" class="btn btn-sm ${item.className} me-1"
+                data-vm-id="${vmId}" data-vm-action="${item.action}">
+                ${item.label}
+            </button>
+        `).join("");
+    });
+}
+
+function filterVmRows() {
+    const query = document.getElementById("vm-search").value.toLowerCase();
+    document.querySelectorAll("#vm-table tr").forEach(row => {
+        const name = row.cells[0].innerText.toLowerCase();
+        const status = row.cells[1].innerText;
+        const matchesStatus = statusFilter === "all" ||
+            (statusFilter === "running" && status.includes("Running")) ||
+            (statusFilter === "stopped" &&
+                (status.includes("Stopped") || status.includes("Powered Off")));
+        row.style.display = name.includes(query) && matchesStatus ? "" : "none";
+    });
+}
+
+function setActiveVmFilterCard(activeCard) {
+    document.querySelectorAll("[data-vm-filter]").forEach(card => {
+        card.classList.remove("border-primary", "border-2", "shadow-sm");
+    });
+    activeCard.classList.add("border-primary", "border-2", "shadow-sm");
+}
+
+function updateVmStatusSummary() {
+    const rows = document.querySelectorAll("#vm-table tr");
+    const running = Array.from(rows).filter(row =>
+        row.cells[1].innerText.includes("Running")
+    ).length;
+    document.getElementById("vm-total").innerText = rows.length;
+    document.getElementById("vm-running").innerText = running;
+    document.getElementById("vm-stopped").innerText = rows.length - running;
+}
+
+function renderVmRows(vms) {
+    const tableBody = document.getElementById("vm-table");
+    tableBody.innerHTML = "";
+    vms.forEach(vm => {
+        const row = document.createElement("tr");
+        const nameCell = document.createElement("td");
+        const statusCell = document.createElement("td");
+        const actionCell = document.createElement("td");
+        const badge = document.createElement("span");
+        const actionContainer = document.createElement("div");
+        nameCell.innerText = vm.name;
+        badge.className = `badge ${getStatusBadgeClass(vm.status)}`;
+        badge.innerText = vm.status;
+        statusCell.appendChild(badge);
+        actionContainer.className = "vm-actions";
+        actionContainer.dataset.vmId = vm.id;
+        actionContainer.dataset.powerState = vm.power_state;
+        actionCell.appendChild(actionContainer);
+        row.append(nameCell, statusCell, actionCell);
+        tableBody.appendChild(row);
+    });
+    renderVmActions();
+    updateVmStatusSummary();
+    filterVmRows();
+}
+
+function updateDashboardValues(data) {
+    document.getElementById("cpu").innerText = `${data.summary.cpu} %`;
+    document.getElementById("memory").innerText = `${data.summary.memory} %`;
+    document.getElementById("datastore").innerText = `${data.summary.datastore} %`;
+    document.getElementById("last-refresh").innerText = data.updated.summary;
+    if (data.hardware) {
+        document.getElementById("power").innerText = `${data.hardware.power.watt} W`;
+        document.getElementById("temp-cpu").innerText = `${data.hardware.temperature.cpu} °C`;
+        document.getElementById("temp-ambient").innerText = `${data.hardware.temperature.ambient} °C`;
+        document.getElementById("temp-storage").innerText = `${data.hardware.temperature.storage} °C`;
+    }
+}
+
+async function refreshDashboard() {
+    try {
+        const response = await fetch("/api/dashboard");
+        if (!response.ok) throw new Error("Dashboard refresh failed");
+        const data = await response.json();
+        updateDashboardValues(data);
+        renderVmRows(data.vm);
+        secondsUntilRefresh = refreshInterval;
+        updateRefreshCountdown();
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+async function executePowerAction() {
+    if (!selectedPowerAction) return;
+    const { vmId, action, button } = selectedPowerAction;
+    button.disabled = true;
+    try {
+        const response = await fetch(`/api/vm/${encodeURIComponent(vmId)}/power`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action })
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "VM power action failed");
+        }
+        powerConfirmModal.hide();
+        await refreshDashboard();
+    } catch (error) {
+        alert(error.message);
+        button.disabled = false;
+    }
+}
+
+document.getElementById("confirmPowerAction").addEventListener("click", executePowerAction);
+document.getElementById("vm-table").addEventListener("click", event => {
+    const button = event.target.closest("[data-vm-action]");
+    if (!button) return;
+    selectedPowerAction = {
+        vmId: button.dataset.vmId,
+        action: button.dataset.vmAction,
+        button
+    };
+    document.getElementById("powerConfirmMessage").innerText =
+        `Are you sure you want to ${selectedPowerAction.action} this virtual machine?`;
+    powerConfirmModal.show();
+});
+document.getElementById("vm-search").addEventListener("input", filterVmRows);
+document.querySelectorAll("[data-vm-filter]").forEach(card => {
+    card.addEventListener("click", () => {
+        statusFilter = card.dataset.vmFilter;
+        setActiveVmFilterCard(card);
+        filterVmRows();
+    });
+});
+
+setActiveVmFilterCard(document.querySelector('[data-vm-filter="all"]'));
+renderVmActions();
+updateVmStatusSummary();
+updateRefreshCountdown();
+setInterval(() => {
+    secondsUntilRefresh = Math.max(secondsUntilRefresh - 1, 0);
+    updateRefreshCountdown();
+}, 1000);
+setInterval(refreshDashboard, refreshInterval * 1000);
+</script>
