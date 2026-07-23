@@ -52,7 +52,6 @@ def get_thermal():
 
     return response.json()
 
-
 def parse_thermal(thermal):
 
     fans = thermal.get("Fans", [])
@@ -63,9 +62,6 @@ def parse_thermal(thermal):
     for fan in fans:
 
         health = fan.get("Status", {}).get("Health")
-
-        if health != "OK":
-            fan_health = "Critical"
             break
 
 
@@ -76,17 +72,12 @@ def parse_thermal(thermal):
 
     for sensor in temperatures:
 
-        name = sensor.get("Name", "")
-        temp = sensor.get("ReadingCelsius")
-
 
         if "CPU 1" in name:
             cpu_temp = temp
 
-
         elif "Ambient" in name:
             ambient_temp = temp
-
 
         elif "HD Controller" in name:
             storage_temp = temp
@@ -95,11 +86,33 @@ def parse_thermal(thermal):
     return {
         "fan": {
             "status": fan_health,
-            "count": len(fans)
-        },
-        "temperature": {
             "cpu": cpu_temp,
             "ambient": ambient_temp,
             "storage": storage_temp
         }
     }
+
+
+def get_power():
+
+    session = get_ilo_session()
+
+    url = (
+        f"https://{ILO_HOST}"
+        "/redfish/v1/Chassis/1/Power/"
+    )
+
+    response = session.get(url)
+
+    response.raise_for_status()
+
+    return response.json()            "count": len(fans)
+        },
+        "temperature": {
+        name = sensor.get("Name", "")
+        temp = sensor.get("ReadingCelsius")
+
+
+        if health != "OK":
+            fan_health = "Critical"
+
