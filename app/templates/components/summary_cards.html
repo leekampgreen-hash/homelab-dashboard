@@ -7,9 +7,31 @@
                 CPU Usage
             </div>
             <div class="card-body text-center">
-                <h3 id="cpu">
+                <h3 id="cpu" class="mb-2">
                     {{ summary.cpu }} %
                 </h3>
+                <div
+                    class="progress"
+                    role="progressbar"
+                    aria-label="CPU usage"
+                    aria-valuenow="{{ summary.cpu }}"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                >
+                    <div
+                        class="progress-bar {% if summary.cpu < 50 %}bg-success{% elif summary.cpu < 80 %}bg-warning{% else %}bg-danger{% endif %}"
+                        style="width: {{ summary.cpu }}%"
+                    ></div>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    {% if summary.cpu < 50 %}
+                        Normal
+                    {% elif summary.cpu < 80 %}
+                        Moderate usage
+                    {% else %}
+                        High usage
+                    {% endif %}
+                </small>
             </div>
         </div>
     </div>
@@ -22,9 +44,31 @@
                 Memory Usage
             </div>
             <div class="card-body text-center">
-                <h3 id="memory">
+                <h3 id="memory" class="mb-2">
                     {{ summary.memory }} %
                 </h3>
+                <div
+                    class="progress"
+                    role="progressbar"
+                    aria-label="Memory usage"
+                    aria-valuenow="{{ summary.memory }}"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                >
+                    <div
+                        class="progress-bar {% if summary.memory < 50 %}bg-success{% elif summary.memory < 80 %}bg-warning{% else %}bg-danger{% endif %}"
+                        style="width: {{ summary.memory }}%"
+                    ></div>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    {% if summary.memory < 50 %}
+                        Normal
+                    {% elif summary.memory < 80 %}
+                        Moderate usage
+                    {% else %}
+                        High usage
+                    {% endif %}
+                </small>
             </div>
         </div>
     </div>
@@ -37,9 +81,31 @@
                 Datastore Usage
             </div>
             <div class="card-body text-center">
-                <h3 id="datastore">
+                <h3 id="datastore" class="mb-2">
                     {{ summary.datastore }} %
                 </h3>
+                <div
+                    class="progress"
+                    role="progressbar"
+                    aria-label="Datastore usage"
+                    aria-valuenow="{{ summary.datastore }}"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                >
+                    <div
+                        class="progress-bar {% if summary.datastore < 50 %}bg-success{% elif summary.datastore < 80 %}bg-warning{% else %}bg-danger{% endif %}"
+                        style="width: {{ summary.datastore }}%"
+                    ></div>
+                </div>
+                <small class="text-muted d-block mt-2">
+                    {% if summary.datastore < 50 %}
+                        Normal
+                    {% elif summary.datastore < 80 %}
+                        Moderate usage
+                    {% else %}
+                        High usage
+                    {% endif %}
+                </small>
             </div>
         </div>
     </div>
