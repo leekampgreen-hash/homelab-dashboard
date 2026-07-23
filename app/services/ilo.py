@@ -148,3 +148,21 @@ def parse_power(power):
             "count": len(power_supplies)
         }
     }
+
+
+def get_ilo_health():
+
+    chassis = get_chassis()
+    thermal = parse_thermal(get_thermal())
+    power = parse_power(get_power())
+
+    return {
+        "status": chassis.get("Status", {}).get("Health") or "Unknown",
+        "chassis": {
+            "model": chassis.get("Model", "Unknown")
+        },
+        "fan": thermal["fan"],
+        "temperature": thermal["temperature"],
+        "power": power["power"],
+        "psu": power["psu"]
+    }
