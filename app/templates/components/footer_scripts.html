@@ -89,6 +89,7 @@ function renderVmRows(vms) {
         const ipCell = document.createElement("td");
         const guestCell = document.createElement("td");
         const hostCell = document.createElement("td");
+        const uptimeCell = document.createElement("td");
         const actionCell = document.createElement("td");
         const badge = document.createElement("span");
         const actionContainer = document.createElement("div");
@@ -107,6 +108,7 @@ function renderVmRows(vms) {
         ipCell.innerText = vm.ip || "--";
         guestCell.innerText = vm.guest || "--";
         hostCell.innerText = vm.host || "--";
+        uptimeCell.innerText = vm.uptime || "--";
 
         actionContainer.className = "vm-actions";
         actionContainer.dataset.vmId = vm.id;
@@ -121,6 +123,7 @@ function renderVmRows(vms) {
             ipCell,
             guestCell,
             hostCell,
+            uptimeCell,
             actionCell
         );
         tableBody.appendChild(row);

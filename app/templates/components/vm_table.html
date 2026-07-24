@@ -63,6 +63,7 @@
                     <th>IP Address</th>
                     <th>Guest OS</th>
                     <th>Host</th>
+                    <th>Uptime</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -101,6 +102,7 @@
                     <td>{{ vm.ip_address | default("--") }}</td>
                     <td>{{ vm.guest_os | default("--") }}</td>
                     <td>{{ vm.host | default("--") }}</td>
+                    <td>{{ vm.uptime | default("--") }}</td>
                     <td>
                         <div
                             class="vm-actions"
