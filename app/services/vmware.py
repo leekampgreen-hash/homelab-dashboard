@@ -171,7 +171,19 @@ def get_vm_list():
                 "uptime": uptime
             })
 
-        return sorted(vms, key=lambda x: x["name"].lower())
+        power_state_order = {
+            "poweredOn": 0,
+            "suspended": 1,
+            "poweredOff": 2
+        }
+
+        return sorted(
+            vms,
+            key=lambda x: (
+                power_state_order[x["power_state"]],
+                x["name"].lower()
+            )
+        )
 
     finally:
         Disconnect(si)
