@@ -75,6 +75,23 @@ def get_host_summary():
         Disconnect(si)
 
 
+def format_uptime(seconds):
+
+    if seconds is None or seconds == "--":
+        return "--"
+
+    minutes = seconds // 60
+    hours = minutes // 60
+    days = hours // 24
+
+    if days:
+        return f"{days}d {hours % 24}h"
+    elif hours:
+        return f"{hours}h {minutes % 60}m"
+
+    return f"{minutes}m"
+
+
 def get_vm_list():
 
     si = connect_esxi()
@@ -102,6 +119,7 @@ def get_vm_list():
             ip = "--"
             guest = "--"
             host = "--"
+            uptime = "--"
 
             try:
                 cpu = vm.config.hardware.numCPU
@@ -128,10 +146,17 @@ def get_vm_list():
             except (AttributeError, TypeError):
                 pass
 
+            try:
+                uptime = vm.summary.quickStats.uptimeSeconds
+            except (AttributeError, TypeError):
+                pass
+
             if power_state == "poweredOff":
                 status = "🔴 Powered Off"
             elif power_state == "suspended":
                 status = "🟡 Suspended"
+
+            uptime = format_uptime(uptime)
 
             vms.append({
                 "id": vm._moId,
@@ -142,7 +167,8 @@ def get_vm_list():
                 "memory": memory,
                 "ip": ip,
                 "guest": guest,
-                "host": host
+                "host": host,
+                "uptime": uptime
             })
 
         return sorted(vms, key=lambda x: x["name"].lower())
