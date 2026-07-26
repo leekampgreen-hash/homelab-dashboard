@@ -38,3 +38,32 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="snapshotModal" tabindex="-1" aria-labelledby="snapshotModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="snapshotModalLabel">VM Snapshots</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="snapshotVmName" class="fw-semibold mb-3"></div>
+                <div id="snapshotMessage" class="text-muted mb-3">Loading snapshots...</div>
+                <select id="snapshotList" class="form-select mb-3" aria-label="Existing snapshots">
+                    <option value="">No snapshot selected</option>
+                </select>
+                <div class="input-group">
+                    <input id="snapshotName" class="form-control" placeholder="New snapshot name">
+                    <button id="createSnapshot" class="btn btn-primary" type="button">Create</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="restoreSnapshot" type="button" class="btn btn-warning">Restore</button>
+                <button id="deleteSnapshot" type="button" class="btn btn-danger">Delete</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="taskToastContainer" class="toast-container position-fixed bottom-0 end-0 p-3"></div>

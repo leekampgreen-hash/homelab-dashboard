@@ -3,6 +3,70 @@ const refreshInterval = 30;
 let secondsUntilRefresh = refreshInterval;
 let statusFilter = "all";
 let selectedPowerAction = null;
+const snapshotApi = {
+    listVms: () => fetchJson("/api/vm"),
+    list: vmId => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/snapshots`),
+    create: (vmId, payload) => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/snapshots`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    }),
+    restore: (vmId, snapshotId) => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/snapshots/${encodeURIComponent(snapshotId)}/restore`, { method: "POST" }),
+    remove: (vmId, snapshotId) => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/snapshots/${encodeURIComponent(snapshotId)}`, { method: "DELETE" })
+};
+
+const vmActionApi = {
+    powerOn: vmId => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/poweron`, { method: "POST" }),
+    powerOff: vmId => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/poweroff`, { method: "POST" }),
+    reset: vmId => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/reset`, { method: "POST" }),
+    shutdown: vmId => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/shutdown`, { method: "POST" }),
+    suspend: vmId => fetchJson(`/api/vm/${encodeURIComponent(vmId)}/suspend`, { method: "POST" })
+};
+
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "VMware request failed");
+    return data;
+}
+
+function showTaskToast(message, type = "info", progress = null) {
+    const toast = document.createElement("div");
+    toast.className = `toast align-items-center text-bg-${type} border-0`;
+    toast.setAttribute("role", "alert");
+    const progressText = progress === null ? "" : ` (${progress}%)`;
+    const spinner = type === "info" ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>' : "";
+    toast.innerHTML = `<div class="d-flex"><div class="toast-body">${spinner}${message}${progressText}</div>` +
+        `<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+    document.getElementById("taskToastContainer").appendChild(toast);
+    const instance = new bootstrap.Toast(toast, { delay: type === "info" ? 2500 : 5000 });
+    instance.show();
+    toast.addEventListener("hidden.bs.toast", () => toast.remove());
+}
+
+async function pollVmwareTask(taskId) {
+    showTaskToast("VMware action running...", "info");
+    while (true) {
+        const result = await fetchJson(`/api/tasks/${encodeURIComponent(taskId)}`);
+        const task = result.data;
+        if (task.state === "success") {
+            showTaskToast("VMware action completed", "success", task.progress);
+            return task;
+        }
+        if (task.state === "error") {
+            showTaskToast(task.error || "VMware action failed", "danger");
+            throw new Error(task.error || "VMware action failed");
+        }
+        showTaskToast(`VMware action ${task.state}`, "info", task.progress);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+}
+
+async function runTaskAction(action) {
+    const response = await action();
+    const taskId = response.task_id || response.task;
+    if (!taskId) throw new Error("VMware task ID was not returned");
+    return pollVmwareTask(taskId);
+}
 
 const powerConfirmModal = new bootstrap.Modal(
     document.getElementById("powerConfirmModal")
@@ -36,13 +100,13 @@ function getPowerActions(powerState) {
 function renderVmActions() {
     document.querySelectorAll(".vm-actions").forEach(container => {
         const vmId = container.dataset.vmId;
-        const actions = getPowerActions(container.dataset.powerState);
-        container.innerHTML = actions.map(item => `
-            <button type="button" class="btn btn-sm ${item.className} me-1"
-                data-vm-id="${vmId}" data-vm-action="${item.action}">
-                ${item.label}
-            </button>
-        `).join("");
+        container.innerHTML = `<div class="dropdown"><button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">Action</button>` +
+            `<ul class="dropdown-menu"><li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="powerOn">Power On</button></li>` +
+            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="powerOff">Power Off</button></li>` +
+            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="reset">Reset</button></li>` +
+            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="shutdown">Shutdown Guest</button></li>` +
+            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="suspend">Suspend</button></li>` +
+            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="snapshot">Snapshot</button></li></ul></div>`;
     });
 }
 
@@ -221,15 +285,7 @@ async function executePowerAction() {
     const { vmId, action, button } = selectedPowerAction;
     button.disabled = true;
     try {
-        const response = await fetch(`/api/vm/${encodeURIComponent(vmId)}/power`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action })
-        });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || "VM power action failed");
-        }
+        await runTaskAction(() => vmActionApi[action](vmId));
         powerConfirmModal.hide();
         await refreshDashboard();
     } catch (error) {
@@ -242,6 +298,10 @@ document.getElementById("confirmPowerAction").addEventListener("click", executeP
 document.getElementById("vm-table").addEventListener("click", event => {
     const button = event.target.closest("[data-vm-action]");
     if (!button) return;
+    if (button.dataset.vmAction === "snapshot") {
+        openSnapshotModal(button.dataset.vmId, button.closest("tr").cells[0].innerText);
+        return;
+    }
     selectedPowerAction = {
         vmId: button.dataset.vmId,
         action: button.dataset.vmAction,
@@ -250,6 +310,55 @@ document.getElementById("vm-table").addEventListener("click", event => {
     document.getElementById("powerConfirmMessage").innerText =
         `Are you sure you want to ${selectedPowerAction.action} this virtual machine?`;
     powerConfirmModal.show();
+});
+
+const snapshotModal = new bootstrap.Modal(document.getElementById("snapshotModal"));
+let selectedSnapshotVm = null;
+
+async function loadSnapshots() {
+    const result = await snapshotApi.list(selectedSnapshotVm.id);
+    const select = document.getElementById("snapshotList");
+    select.innerHTML = "";
+    if (!result.data.length) {
+        select.innerHTML = '<option value="">No snapshots</option>';
+    } else {
+        result.data.forEach(snapshot => {
+            const option = document.createElement("option");
+            option.value = snapshot.id;
+            option.innerText = `${snapshot.name} - ${snapshot.description || "No description"}`;
+            select.appendChild(option);
+        });
+    }
+    document.getElementById("snapshotMessage").innerText = `${result.data.length} snapshot(s)`;
+}
+
+async function openSnapshotModal(vmId, vmName) {
+    selectedSnapshotVm = { id: vmId, name: vmName };
+    document.getElementById("snapshotVmName").innerText = vmName;
+    snapshotModal.show();
+    try { await loadSnapshots(); } catch (error) { showTaskToast(error.message, "danger"); }
+}
+
+async function snapshotTask(operation) {
+    try {
+        const response = await operation();
+        await pollVmwareTask(response.task_id);
+        await loadSnapshots();
+    } catch (error) { showTaskToast(error.message, "danger"); }
+}
+
+document.getElementById("createSnapshot").addEventListener("click", () => {
+    const name = document.getElementById("snapshotName").value.trim();
+    if (!name) return showTaskToast("Snapshot name is required", "warning");
+    snapshotTask(() => snapshotApi.create(selectedSnapshotVm.id, { name }));
+});
+document.getElementById("restoreSnapshot").addEventListener("click", () => {
+    const id = document.getElementById("snapshotList").value;
+    if (id) snapshotTask(() => snapshotApi.restore(selectedSnapshotVm.id, id));
+});
+document.getElementById("deleteSnapshot").addEventListener("click", () => {
+    const id = document.getElementById("snapshotList").value;
+    if (id) snapshotTask(() => snapshotApi.remove(selectedSnapshotVm.id, id));
 });
 document.getElementById("vm-search").addEventListener("input", filterVmRows);
 document.querySelectorAll("[data-vm-filter]").forEach(card => {

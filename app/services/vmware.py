@@ -1,9 +1,12 @@
 import ssl
+import time
+from datetime import datetime, timezone
 
 from pyVim.connect import Disconnect, SmartConnect
 from pyVmomi import vim
 
 from config import ESXI_HOST, ESXI_USERNAME, ESXI_PASSWORD
+from services.logger import logger
 
 
 def connect_esxi():
@@ -18,6 +21,87 @@ def connect_esxi():
     )
 
     return si
+
+
+def _task_state(state):
+    state = str(state or "queued")
+    if state in {"queued", "running", "success", "error"}:
+        return state
+    return "running"
+
+
+def _serialize_task_error(error):
+    if error is None:
+        return None
+
+    return str(getattr(error, "msg", error))
+
+
+def get_task_status(task):
+    """Return the normalized status for a pyVmomi task object."""
+    info = task.info
+    state = _task_state(info.state)
+    progress = info.progress if info.progress is not None else 0
+
+    if state == "success":
+        progress = 100
+
+    return {
+        "id": info.key,
+        "state": state,
+        "progress": max(0, min(100, progress)),
+        "start_time": info.startTime.isoformat() if info.startTime else None,
+        "complete_time": info.completeTime.isoformat() if info.completeTime else None,
+        "error": _serialize_task_error(info.error) if state == "error" else None
+    }
+
+
+def wait_for_task(task, timeout=None):
+    """Wait for a VMware task and return its normalized final status."""
+    started = time.monotonic()
+
+    while True:
+        status = get_task_status(task)
+        if status["state"] in {"success", "error"}:
+            return status
+
+        if timeout is not None and time.monotonic() - started >= timeout:
+            raise TimeoutError("VMware task timed out")
+
+        time.sleep(1)
+
+
+def serialize_task(task):
+    return get_task_status(task)
+
+
+def _find_task(content, task_id):
+    task_manager = content.taskManager
+
+    for task in task_manager.recentTask or []:
+        if task.info.key == task_id:
+            return task
+
+    raise ValueError("VMware task not found")
+
+
+def get_task(task_id):
+    si = connect_esxi()
+
+    try:
+        return _find_task(si.RetrieveContent(), task_id)
+    finally:
+        Disconnect(si)
+
+
+def get_task_status_by_id(task_id):
+    si = connect_esxi()
+
+    try:
+        task = _find_task(si.RetrieveContent(), task_id)
+        return serialize_task(task)
+    finally:
+        Disconnect(si)
 
 
 def get_host():
@@ -92,6 +176,93 @@ def format_uptime(seconds):
     return f"{minutes}m"
 
 
+def _snapshot_count(snapshot_list):
+    return sum(1 + _snapshot_count(snapshot.childSnapshotList) for snapshot in snapshot_list or [])
+
+
+def serialize_virtual_machine(vm):
+    """Return the canonical VM inventory model used by API and dashboard consumers."""
+    power_state = str(vm.runtime.powerState)
+    status = {
+        "poweredOn": "🟢 Running",
+        "poweredOff": "🔴 Powered Off",
+        "suspended": "🟡 Suspended"
+    }.get(power_state, "Unknown")
+
+    try:
+        cpu = vm.config.hardware.numCPU
+        memory_mb = vm.config.hardware.memoryMB
+    except (AttributeError, TypeError):
+        cpu = memory_mb = "--"
+
+    try:
+        guest_os = vm.config.guestFullName or "--"
+    except (AttributeError, TypeError):
+        guest_os = "--"
+    try:
+        ip_address = vm.guest.ipAddress or "--"
+        hostname = vm.guest.hostName or "--"
+        tools_status = vm.guest.toolsRunningStatus or "unknown"
+    except (AttributeError, TypeError):
+        ip_address = hostname = "--"
+        tools_status = "unknown"
+
+    try:
+        uptime = format_uptime(vm.summary.quickStats.uptimeSeconds)
+    except (AttributeError, TypeError):
+        uptime = "--"
+
+    datastore = ", ".join(item.name for item in (vm.datastore or [])) or "--"
+    cluster = "--"
+    try:
+        parent = vm.runtime.host.parent
+        if isinstance(parent, vim.ClusterComputeResource):
+            cluster = parent.name
+    except (AttributeError, TypeError):
+        pass
+
+    try:
+        resource_pool = vm.resourcePool.name or "--"
+    except (AttributeError, TypeError):
+        resource_pool = "--"
+
+    provisioned = used = 0
+    try:
+        for usage in vm.storage.perDatastoreUsage:
+            used += usage.committed or 0
+            provisioned += (usage.committed or 0) + (usage.uncommitted or 0)
+    except (AttributeError, TypeError):
+        pass
+
+    provisioned_storage_gb = round(provisioned / 1024**3, 2)
+    used_storage_gb = round(used / 1024**3, 2)
+
+    return {
+        "id": vm._moId,
+        "name": vm.name,
+        "power_state": power_state,
+        "guest_os": guest_os,
+        "ip_address": ip_address,
+        "hostname": hostname,
+        "cpu": cpu,
+        "memory_mb": memory_mb,
+        "provisioned_storage_gb": provisioned_storage_gb,
+        "used_storage_gb": used_storage_gb,
+        "snapshot_count": _snapshot_count(vm.snapshot.rootSnapshotList),
+        "tools_status": tools_status,
+        "uptime": uptime,
+        "datastore": datastore,
+        "cluster": cluster,
+        "resource_pool": resource_pool,
+        # Backward-compatible aliases used by the existing dashboard.
+        "status": status,
+        "memory": memory_mb,
+        "ip": ip_address,
+        "guest": guest_os,
+        "host": hostname
+    }
+
+
 def get_vm_list():
 
     si = connect_esxi()
@@ -110,6 +281,9 @@ def get_vm_list():
         vms = []
 
         for vm in view.view:
+
+            vms.append(serialize_virtual_machine(vm))
+            continue
 
             power_state = str(vm.runtime.powerState)
             status = "🟢 Running"
@@ -189,6 +363,212 @@ def get_vm_list():
         Disconnect(si)
 
 
+def list_virtual_machines():
+    return get_vm_list()
+
+
+def _get_vm_from_content(content, vm_identifier):
+    view = content.viewManager.CreateContainerView(
+        content.rootFolder,
+        [vim.VirtualMachine],
+        True
+    )
+
+    try:
+        for vm in view.view:
+            if vm._moId == vm_identifier or vm.name == vm_identifier:
+                return vm
+    finally:
+        view.Destroy()
+
+    raise ValueError("Virtual machine not found")
+
+
+def get_virtual_machine(vm_identifier):
+    si = connect_esxi()
+
+    try:
+        return _get_vm_from_content(si.RetrieveContent(), vm_identifier)
+    finally:
+        Disconnect(si)
+
+
+def _submit_vm_action(vm_id, action, submit, valid_states, requester="unknown"):
+    si = connect_esxi()
+
+    try:
+        vm = _get_vm_from_content(si.RetrieveContent(), vm_id)
+        power_state = str(vm.runtime.powerState)
+        if power_state not in valid_states:
+            expected = ", ".join(sorted(valid_states))
+            raise ValueError(
+                f"Cannot {action} virtual machine in state {power_state}; "
+                f"expected one of: {expected}"
+            )
+
+        task = submit(vm)
+        task_status = serialize_task(task)
+        logger.info(
+            "VM action submitted vm_name=%s action=%s requester=%s "
+            "timestamp=%s task_id=%s",
+            vm.name,
+            action,
+            requester,
+            datetime.now(timezone.utc).isoformat(),
+            task_status["id"]
+        )
+        return task_status
+    finally:
+        Disconnect(si)
+
+
+def power_on_vm(vm_id, requester="unknown"):
+    return _submit_vm_action(
+        vm_id,
+        "power_on",
+        lambda vm: vm.PowerOnVM_Task(),
+        {"poweredOff", "suspended"},
+        requester
+    )
+
+
+def power_off_vm(vm_id, force=False, requester="unknown"):
+    action = "power_off_force" if force else "power_off"
+    return _submit_vm_action(
+        vm_id,
+        action,
+        lambda vm: vm.PowerOffVM_Task(),
+        {"poweredOn", "suspended"},
+        requester
+    )
+
+
+def reset_vm(vm_id, requester="unknown"):
+    return _submit_vm_action(
+        vm_id,
+        "reset",
+        lambda vm: vm.ResetVM_Task(),
+        {"poweredOn"},
+        requester
+    )
+
+
+def shutdown_guest(vm_id, requester="unknown"):
+    def submit(vm):
+        task = vm.ShutdownGuest()
+        if task is None:
+            logger.warning(
+                "VM guest shutdown returned no task; using power-off task for vm_name=%s",
+                vm.name
+            )
+            return vm.PowerOffVM_Task()
+        return task
+
+    return _submit_vm_action(
+        vm_id,
+        "shutdown_guest",
+        submit,
+        {"poweredOn"},
+        requester
+    )
+
+
+def suspend_vm(vm_id, requester="unknown"):
+    return _submit_vm_action(
+        vm_id,
+        "suspend",
+        lambda vm: vm.SuspendVM_Task(),
+        {"poweredOn"},
+        requester
+    )
+
+
+def _snapshot_data(snapshot, parent_name=None):
+    info = snapshot.snapshot
+    return {
+        "id": info._moId,
+        "name": snapshot.name,
+        "description": snapshot.description or "",
+        "created": snapshot.createTime.isoformat() if snapshot.createTime else None,
+        "state": str(snapshot.state),
+        "parent_id": parent_name
+    }
+
+
+def _flatten_snapshots(snapshot_list, parent_id=None):
+    snapshots = []
+
+    for snapshot in snapshot_list or []:
+        snapshots.append(_snapshot_data(snapshot, parent_id))
+        snapshots.extend(_flatten_snapshots(snapshot.childSnapshotList, snapshot.snapshot._moId))
+
+    return snapshots
+
+
+def list_snapshots(vm_identifier):
+    si = connect_esxi()
+
+    try:
+        vm = _get_vm_from_content(si.RetrieveContent(), vm_identifier)
+        return _flatten_snapshots(vm.snapshot.rootSnapshotList)
+    finally:
+        Disconnect(si)
+
+
+def _get_snapshot_from_vm(vm, snapshot_identifier):
+    def find(snapshot_list):
+        for snapshot in snapshot_list or []:
+            if snapshot.snapshot._moId == snapshot_identifier or snapshot.name == snapshot_identifier:
+                return snapshot.snapshot
+            found = find(snapshot.childSnapshotList)
+            if found:
+                return found
+        return None
+
+    snapshot = find(vm.snapshot.rootSnapshotList)
+    if snapshot is None:
+        raise ValueError("Snapshot not found")
+    return snapshot
+
+
+def create_snapshot(vm_identifier, name, description="", memory=False, quiesce=False):
+    si = connect_esxi()
+
+    try:
+        vm = _get_vm_from_content(si.RetrieveContent(), vm_identifier)
+        task = vm.CreateSnapshot_Task(name, description, memory, quiesce)
+        logger.info("Snapshot creation requested for VM %s", vm._moId)
+        return serialize_task(task)
+    finally:
+        Disconnect(si)
+
+
+def restore_snapshot(vm_identifier, snapshot_identifier):
+    si = connect_esxi()
+
+    try:
+        vm = _get_vm_from_content(si.RetrieveContent(), vm_identifier)
+        snapshot = _get_snapshot_from_vm(vm, snapshot_identifier)
+        task = snapshot.RevertToSnapshot_Task()
+        logger.info("Snapshot restore requested for VM %s", vm._moId)
+        return serialize_task(task)
+    finally:
+        Disconnect(si)
+
+
+def delete_snapshot(vm_identifier, snapshot_identifier):
+    si = connect_esxi()
+
+    try:
+        vm = _get_vm_from_content(si.RetrieveContent(), vm_identifier)
+        snapshot = _get_snapshot_from_vm(vm, snapshot_identifier)
+        task = snapshot.RemoveSnapshot_Task(removeChildren=False)
+        logger.info("Snapshot deletion requested for VM %s", vm._moId)
+        return serialize_task(task)
+    finally:
+        Disconnect(si)
+
+
 def power_vm(vm_id, action):
 
     si = connect_esxi()
@@ -198,23 +578,7 @@ def power_vm(vm_id, action):
 
         container = content.rootFolder
 
-        view = content.viewManager.CreateContainerView(
-            container,
-            [vim.VirtualMachine],
-            True
-        )
-
-        vm = None
-
-        for item in view.view:
-            if item._moId == vm_id:
-                vm = item
-                break
-
-        view.Destroy()
-
-        if vm is None:
-            raise ValueError("Virtual machine not found")
+        vm = _get_vm_from_content(content, vm_id)
 
         power_state = str(vm.runtime.powerState)
 
