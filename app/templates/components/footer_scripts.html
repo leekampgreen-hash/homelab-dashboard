@@ -84,29 +84,47 @@ function getStatusBadgeClass(status) {
     return "bg-secondary";
 }
 
-function getPowerActions(powerState) {
+function getActionState(powerState) {
+    const baseActions = [
+        { action: "powerOn", label: "Power On", color: "success" },
+        { action: "powerOff", label: "Power Off", color: "danger" },
+        { action: "reset", label: "Reset", color: "warning" },
+        { action: "shutdown", label: "Shutdown Guest", color: "info" },
+        { action: "suspend", label: "Suspend", color: "secondary" },
+        { action: "snapshot", label: "Snapshot", color: "primary" }
+    ];
+
     if (powerState === "poweredOn") {
-        return [
-            { action: "stop", label: "Stop", className: "btn-danger" },
-            { action: "restart", label: "Restart", className: "btn-warning" }
-        ];
+        return baseActions.map(a => ({
+            ...a,
+            disabled: a.action === "powerOn"
+        }));
     }
     if (powerState === "poweredOff") {
-        return [{ action: "start", label: "Start", className: "btn-success" }];
+        return baseActions.map(a => ({
+            ...a,
+            disabled: ["powerOff", "reset", "shutdown", "suspend"].includes(a.action)
+        }));
     }
-    return [];
+    return baseActions.map(a => ({ ...a, disabled: a.action !== "snapshot" }));
 }
 
 function renderVmActions() {
     document.querySelectorAll(".vm-actions").forEach(container => {
         const vmId = container.dataset.vmId;
-        container.innerHTML = `<div class="dropdown"><button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">Action</button>` +
-            `<ul class="dropdown-menu"><li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="powerOn">Power On</button></li>` +
-            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="powerOff">Power Off</button></li>` +
-            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="reset">Reset</button></li>` +
-            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="shutdown">Shutdown Guest</button></li>` +
-            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="suspend">Suspend</button></li>` +
-            `<li><button class="dropdown-item" data-vm-id="${vmId}" data-vm-action="snapshot">Snapshot</button></li></ul></div>`;
+        const powerState = container.dataset.powerState;
+        const actions = getActionState(powerState);
+
+        const dropdownHtml = `<div class="dropdown">
+            <button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">Action</button>
+            <ul class="dropdown-menu">
+                ${actions.map(a => `<li><button class="dropdown-item ${a.disabled ? 'disabled' : ''} text-${a.color}" 
+                    data-vm-id="${vmId}" data-vm-action="${a.action}" 
+                    ${a.disabled ? 'disabled' : ''}>${a.label}</button></li>`).join('')}
+            </ul>
+        </div>`;
+        
+        container.innerHTML = dropdownHtml;
     });
 }
 
@@ -298,6 +316,7 @@ document.getElementById("confirmPowerAction").addEventListener("click", executeP
 document.getElementById("vm-table").addEventListener("click", event => {
     const button = event.target.closest("[data-vm-action]");
     if (!button) return;
+    if (button.disabled) return;
     if (button.dataset.vmAction === "snapshot") {
         openSnapshotModal(button.dataset.vmId, button.closest("tr").cells[0].innerText);
         return;
