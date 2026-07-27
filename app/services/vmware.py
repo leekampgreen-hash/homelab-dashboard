@@ -248,7 +248,7 @@ def serialize_virtual_machine(vm):
         "memory_mb": memory_mb,
         "provisioned_storage_gb": provisioned_storage_gb,
         "used_storage_gb": used_storage_gb,
-        "snapshot_count": _snapshot_count(vm.snapshot.rootSnapshotList),
+        "snapshot_count": _snapshot_count(vm.snapshot.rootSnapshotList) if vm.snapshot else 0,
         "tools_status": tools_status,
         "uptime": uptime,
         "datastore": datastore,
