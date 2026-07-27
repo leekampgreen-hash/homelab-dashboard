@@ -313,7 +313,25 @@ document.getElementById("vm-table").addEventListener("click", event => {
 });
 
 const snapshotModal = new bootstrap.Modal(document.getElementById("snapshotModal"));
+const snapshotConfirmModal = new bootstrap.Modal(document.getElementById("snapshotConfirmModal"));
 let selectedSnapshotVm = null;
+let pendingSnapshotConfirmation = null;
+let snapshotControlsBusy = false;
+
+function setSnapshotControlsBusy(isBusy) {
+    snapshotControlsBusy = isBusy;
+    ["createSnapshot", "restoreSnapshot", "deleteSnapshot"].forEach(id => {
+        document.getElementById(id).disabled = isBusy;
+    });
+    document.getElementById("snapshotList").disabled = isBusy;
+    document.getElementById("snapshotName").disabled = isBusy;
+}
+
+function updateSnapshotSelectionState() {
+    const hasSelection = !snapshotControlsBusy && Boolean(document.getElementById("snapshotList").value);
+    document.getElementById("restoreSnapshot").disabled = !hasSelection;
+    document.getElementById("deleteSnapshot").disabled = !hasSelection;
+}
 
 async function loadSnapshots() {
     const result = await snapshotApi.list(selectedSnapshotVm.id);
@@ -325,11 +343,15 @@ async function loadSnapshots() {
         result.data.forEach(snapshot => {
             const option = document.createElement("option");
             option.value = snapshot.id;
-            option.innerText = `${snapshot.name} - ${snapshot.description || "No description"}`;
+            option.dataset.snapshotName = snapshot.name;
+            option.innerText = snapshot.description
+                ? `${snapshot.name} - ${snapshot.description}`
+                : snapshot.name;
             select.appendChild(option);
         });
     }
     document.getElementById("snapshotMessage").innerText = `${result.data.length} snapshot(s)`;
+    updateSnapshotSelectionState();
 }
 
 async function openSnapshotModal(vmId, vmName) {
@@ -340,12 +362,33 @@ async function openSnapshotModal(vmId, vmName) {
 }
 
 async function snapshotTask(operation) {
+    setSnapshotControlsBusy(true);
     try {
         const response = await operation();
         await pollVmwareTask(response.task_id);
         await loadSnapshots();
-    } catch (error) { showTaskToast(error.message, "danger"); }
+    } catch (error) {
+        showTaskToast(error.message, "danger");
+    } finally {
+        setSnapshotControlsBusy(false);
+        updateSnapshotSelectionState();
+    }
 }
+
+function confirmSnapshotAction(message, action) {
+    document.getElementById("snapshotConfirmMessage").innerText = message;
+    pendingSnapshotConfirmation = action;
+    snapshotConfirmModal.show();
+}
+
+document.getElementById("confirmSnapshotAction").addEventListener("click", () => {
+    const action = pendingSnapshotConfirmation;
+    pendingSnapshotConfirmation = null;
+    snapshotConfirmModal.hide();
+    if (action) action();
+});
+
+document.getElementById("snapshotList").addEventListener("change", updateSnapshotSelectionState);
 
 document.getElementById("createSnapshot").addEventListener("click", () => {
     let name = document.getElementById("snapshotName").value.trim();
@@ -358,12 +401,24 @@ document.getElementById("createSnapshot").addEventListener("click", () => {
     snapshotTask(() => snapshotApi.create(selectedSnapshotVm.id, { name }));
 });
 document.getElementById("restoreSnapshot").addEventListener("click", () => {
-    const id = document.getElementById("snapshotList").value;
-    if (id) snapshotTask(() => snapshotApi.restore(selectedSnapshotVm.id, id));
+    const select = document.getElementById("snapshotList");
+    const id = select.value;
+    if (id) {
+        const name = select.options[select.selectedIndex].dataset.snapshotName;
+        confirmSnapshotAction(`Restore snapshot '${name}'?`, () =>
+            snapshotTask(() => snapshotApi.restore(selectedSnapshotVm.id, id))
+        );
+    }
 });
 document.getElementById("deleteSnapshot").addEventListener("click", () => {
-    const id = document.getElementById("snapshotList").value;
-    if (id) snapshotTask(() => snapshotApi.remove(selectedSnapshotVm.id, id));
+    const select = document.getElementById("snapshotList");
+    const id = select.value;
+    if (id) {
+        const name = select.options[select.selectedIndex].dataset.snapshotName;
+        confirmSnapshotAction(`Delete snapshot '${name}'?`, () =>
+            snapshotTask(() => snapshotApi.remove(selectedSnapshotVm.id, id))
+        );
+    }
 });
 document.getElementById("vm-search").addEventListener("input", filterVmRows);
 document.querySelectorAll("[data-vm-filter]").forEach(card => {
