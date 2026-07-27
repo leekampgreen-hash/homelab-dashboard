@@ -348,8 +348,13 @@ async function snapshotTask(operation) {
 }
 
 document.getElementById("createSnapshot").addEventListener("click", () => {
-    const name = document.getElementById("snapshotName").value.trim();
-    if (!name) return showTaskToast("Snapshot name is required", "warning");
+    let name = document.getElementById("snapshotName").value.trim();
+    if (!name) {
+        const now = new Date();
+        const pad = value => String(value).padStart(2, "0");
+        name = `Snapshot-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-` +
+            `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    }
     snapshotTask(() => snapshotApi.create(selectedSnapshotVm.id, { name }));
 });
 document.getElementById("restoreSnapshot").addEventListener("click", () => {
