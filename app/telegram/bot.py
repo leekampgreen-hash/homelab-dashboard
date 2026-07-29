@@ -1,5 +1,6 @@
 import os
 
+import httpx
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -23,7 +24,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏠 Homelab Dashboard Online")
+    dashboard_url = os.getenv("DASHBOARD_URL", "http://dashboard:8000").rstrip("/")
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(f"{dashboard_url}/api/vm")
+            response.raise_for_status()
+            payload = response.json()
+
+        vms = payload.get("data")
+        if payload.get("success") is not True or not isinstance(vms, list):
+            raise ValueError("Invalid dashboard response")
+
+        running = sum(vm.get("power_state") == "poweredOn" for vm in vms if isinstance(vm, dict))
+        powered_off = sum(vm.get("power_state") == "poweredOff" for vm in vms if isinstance(vm, dict))
+
+        await update.message.reply_text(
+            "🏠 Homelab Status\n\n"
+            f"VM Total: {len(vms)}\n"
+            f"🟢 Running: {running}\n"
+            f"🔴 Powered Off: {powered_off}"
+        )
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        await update.message.reply_text(
+            "Unable to retrieve homelab status from the dashboard."
+        )
 
 
 def create_application():
