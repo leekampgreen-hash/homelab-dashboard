@@ -35,3 +35,20 @@ services:
 
     volumes:
       - ./app:/app
+
+
+  telegram-bot:
+
+    build: .
+
+    container_name: telegram-bot
+
+    restart: unless-stopped
+
+    command: python telegram/bot.py
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./app:/app
