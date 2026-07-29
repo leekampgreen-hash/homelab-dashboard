@@ -4,3 +4,4 @@ jinja2
 pyvmomi
 requests
 python-dotenv
+python-telegram-bot>=21,<22
