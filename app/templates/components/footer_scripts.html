@@ -139,6 +139,15 @@ function filterVmRows() {
                 (status.includes("Stopped") || status.includes("Powered Off")));
         row.style.display = name.includes(query) && matchesStatus ? "" : "none";
     });
+    document.querySelectorAll("#vm-mobile-list .vm-mobile-card").forEach(card => {
+        const name = card.querySelector(".card-title").innerText.toLowerCase();
+        const status = card.querySelector(".vm-mobile-status").innerText;
+        const matchesStatus = statusFilter === "all" ||
+            (statusFilter === "running" && status.includes("Running")) ||
+            (statusFilter === "stopped" &&
+                (status.includes("Stopped") || status.includes("Powered Off")));
+        card.style.display = name.includes(query) && matchesStatus ? "" : "none";
+    });
 }
 
 function setActiveVmFilterCard(activeCard) {
@@ -160,7 +169,9 @@ function updateVmStatusSummary() {
 
 function renderVmRows(vms) {
     const tableBody = document.getElementById("vm-table");
+    const mobileList = document.getElementById("vm-mobile-list");
     tableBody.innerHTML = "";
+    mobileList.innerHTML = "";
 
     vms.forEach(vm => {
         const row = document.createElement("tr");
@@ -209,6 +220,39 @@ function renderVmRows(vms) {
             actionCell
         );
         tableBody.appendChild(row);
+
+        const card = document.createElement("div");
+        card.className = "card mb-3 vm-mobile-card";
+        card.innerHTML = `
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div><h5 class="card-title mb-1"></h5><span class="vm-mobile-status badge"></span></div>
+                    <div class="vm-actions" data-vm-id="${vm.id}" data-vm-name="${vm.name}" data-power-state="${vm.power_state}"></div>
+                </div>
+                <div class="row g-2 small">
+                    <div class="col-6"><strong>CPU</strong><div class="vm-mobile-cpu vm-mobile-value"></div></div>
+                    <div class="col-6"><strong>Memory</strong><div class="vm-mobile-memory vm-mobile-value"></div></div>
+                    <div class="col-6"><strong>Storage</strong><div class="vm-mobile-storage vm-mobile-value"></div></div>
+                    <div class="col-6"><strong>IP</strong><div class="vm-mobile-ip vm-mobile-value"></div></div>
+                    <div class="col-6"><strong>Guest OS</strong><div class="vm-mobile-guest vm-mobile-value"></div></div>
+                    <div class="col-6"><strong>Host</strong><div class="vm-mobile-host vm-mobile-value"></div></div>
+                    <div class="col-6"><strong>Uptime</strong><div class="vm-mobile-uptime vm-mobile-value"></div></div>
+                </div>
+            </div>`;
+        card.querySelector(".card-title").innerText = vm.name;
+        const status = card.querySelector(".vm-mobile-status");
+        status.className = `vm-mobile-status badge ${getStatusBadgeClass(vm.status)}`;
+        status.innerText = vm.status;
+        card.querySelector(".vm-mobile-cpu").innerText = vm.cpu && vm.cpu !== "--" ? `${vm.cpu} vCPU` : "--";
+        const memoryMb = Number(vm.memory_mb ?? vm.memory);
+        card.querySelector(".vm-mobile-memory").innerText = Number.isFinite(memoryMb) ? `${(memoryMb / 1024).toFixed(1)} GB` : "--";
+        card.querySelector(".vm-mobile-storage").innerText = vm.provisioned_storage_gb === undefined
+            ? "--" : `${vm.used_storage_gb} / ${vm.provisioned_storage_gb} GB used`;
+        card.querySelector(".vm-mobile-ip").innerText = vm.ip_address || vm.ip || "--";
+        card.querySelector(".vm-mobile-guest").innerText = vm.guest_os || vm.guest || "--";
+        card.querySelector(".vm-mobile-host").innerText = vm.host || "--";
+        card.querySelector(".vm-mobile-uptime").innerText = vm.uptime || "--";
+        mobileList.appendChild(card);
     });
 
     renderVmActions();
@@ -313,12 +357,16 @@ async function executePowerAction() {
 }
 
 document.getElementById("confirmPowerAction").addEventListener("click", executePowerAction);
-document.getElementById("vm-table").addEventListener("click", event => {
+function handleVmActionClick(event) {
     const button = event.target.closest("[data-vm-action]");
     if (!button) return;
     if (button.disabled) return;
     if (button.dataset.vmAction === "snapshot") {
-        openSnapshotModal(button.dataset.vmId, button.closest("tr").cells[0].innerText);
+        const row = button.closest("tr");
+        const card = button.closest(".vm-mobile-card");
+        const vmName = button.dataset.vmName ||
+            (row ? row.cells[0].innerText : card.querySelector(".card-title").innerText);
+        openSnapshotModal(button.dataset.vmId, vmName);
         return;
     }
     selectedPowerAction = {
@@ -329,7 +377,10 @@ document.getElementById("vm-table").addEventListener("click", event => {
     document.getElementById("powerConfirmMessage").innerText =
         `Are you sure you want to ${selectedPowerAction.action} this virtual machine?`;
     powerConfirmModal.show();
-});
+}
+
+document.getElementById("vm-table").addEventListener("click", handleVmActionClick);
+document.getElementById("vm-mobile-list").addEventListener("click", handleVmActionClick);
 
 const snapshotModal = new bootstrap.Modal(document.getElementById("snapshotModal"));
 const snapshotConfirmModal = new bootstrap.Modal(document.getElementById("snapshotConfirmModal"));

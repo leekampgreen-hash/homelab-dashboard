@@ -30,6 +30,21 @@
     <link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css"
           rel="stylesheet">
 
+    <style>
+        .mobile-vm-list { display: none; }
+
+        @media (max-width: 767.98px) {
+            .container-fluid {
+                padding-left: .75rem !important;
+                padding-right: .75rem !important;
+            }
+
+            .desktop-vm-table { display: none; }
+            .mobile-vm-list { display: block; }
+            .vm-mobile-value { word-break: break-word; }
+        }
+    </style>
+
 
 </head>
 
