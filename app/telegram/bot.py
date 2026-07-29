@@ -1,6 +1,4 @@
 import os
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import httpx
 from dotenv import load_dotenv
@@ -96,24 +94,30 @@ async def docker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        health = await _dashboard_json("/health")
-        dashboard_online = health.get("status") == "healthy"
         dashboard_data = await _dashboard_json("/api/dashboard")
-        updated = dashboard_data.get("updated", {})
-        last_refresh = updated.get("summary") or "Unavailable"
+        ilo = dashboard_data.get("hardware", {}).get("ilo")
+        if not isinstance(ilo, dict):
+            raise ValueError("iLO health data unavailable")
 
-        collector_running = False
-        if last_refresh != "Unavailable":
-            refreshed_at = datetime.strptime(last_refresh, "%Y-%m-%d %H:%M:%S")
-            refreshed_at = refreshed_at.replace(tzinfo=ZoneInfo("Asia/Jakarta"))
-            collector_running = datetime.now(ZoneInfo("Asia/Jakarta")) - refreshed_at <= timedelta(seconds=90)
+        chassis = ilo.get("chassis", {})
+        fan = ilo.get("fan", {})
+        psu = ilo.get("psu", {})
+        temperature = ilo.get("temperature", {})
+        power = ilo.get("power", {})
+
+        status_icon = "🟢" if ilo.get("status") == "OK" else "🔴"
+        fan_icon = "🟢" if fan.get("status") == "OK" else "🔴"
+        psu_icon = "🟢" if psu.get("status") == "OK" else "🔴"
 
         await update.message.reply_text(
-            "🏠 Homelab Health\n\n"
-            f"Dashboard:\n{'🟢 Online' if dashboard_online else '🔴 Offline'}\n\n"
-            f"Collector:\n{'🟢 Running' if collector_running else '🔴 Unavailable'}\n\n"
-            "Telegram Bot:\n🟢 Running\n\n"
-            f"Last Refresh:\n{last_refresh}"
+            "🏥 Hardware Health\n\n"
+            f"Status:\n{status_icon} {ilo.get('status', 'Unavailable')}\n\n"
+            f"Chassis:\n{chassis.get('model', 'Unavailable')}\n\n"
+            f"Fan:\n{fan_icon} {fan.get('status', 'Unavailable')} ({fan.get('count', 0)})\n\n"
+            f"PSU:\n{psu_icon} {psu.get('status', 'Unavailable')} ({psu.get('count', 0)})\n\n"
+            f"CPU Temperature:\n{temperature.get('cpu', 'Unavailable')}°C\n\n"
+            f"Ambient:\n{temperature.get('ambient', 'Unavailable')}°C\n\n"
+            f"Power:\n{power.get('current', 'Unavailable')} W"
         )
     except (httpx.HTTPError, ValueError, TypeError, AttributeError):
         await update.message.reply_text("Unable to retrieve homelab health.")
