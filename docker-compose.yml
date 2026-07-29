@@ -52,3 +52,4 @@ services:
 
     volumes:
       - ./app:/app
+      - /var/run/docker.sock:/var/run/docker.sock
