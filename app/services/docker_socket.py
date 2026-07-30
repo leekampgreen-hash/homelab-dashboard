@@ -12,6 +12,29 @@ class DockerUnavailableError(Exception):
     pass
 
 
+def _decode_chunked_body(body):
+    chunks = []
+    position = 0
+
+    while True:
+        line_end = body.find(b"\r\n", position)
+        if line_end == -1:
+            raise ValueError("Invalid chunked Docker response")
+
+        chunk_size = int(body[position:line_end].split(b";", 1)[0], 16)
+        position = line_end + 2
+
+        if chunk_size == 0:
+            return b"".join(chunks)
+
+        chunk_end = position + chunk_size
+        if chunk_end > len(body) or body[chunk_end:chunk_end + 2] != b"\r\n":
+            raise ValueError("Invalid chunked Docker response")
+
+        chunks.append(body[position:chunk_end])
+        position = chunk_end + 2
+
+
 def read_container_status():
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -32,10 +55,8 @@ def read_container_status():
 
     try:
         _, body = response.split(b"\r\n\r\n", 1)
-        logger.info("Docker raw response: %s", body[:500])
-        logger.info("Docker response length: %s", len(body))
         decoder = json.JSONDecoder()
-        payload = body.decode()
+        payload = _decode_chunked_body(body).decode()
         containers = []
         position = 0
         while position < len(payload):
