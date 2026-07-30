@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
 from services.cache import load_cache
+from services.docker import DockerMonitorUnavailableError, get_docker_status
 from services.logger import logger
 from services.vmware import (
     create_snapshot,
@@ -70,6 +71,14 @@ async def home(request: Request):
 async def api_dashboard():
 
     return load_cache()
+
+
+@app.get("/api/docker")
+async def api_docker():
+    try:
+        return {"success": True, "data": get_docker_status()}
+    except DockerMonitorUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def vmware_error(message, operation, exc):

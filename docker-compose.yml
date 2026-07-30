@@ -37,6 +37,24 @@ services:
       - ./app:/app
 
 
+  docker-monitor:
+
+    build: .
+
+    container_name: docker-monitor
+
+    restart: unless-stopped
+
+    command: uvicorn docker_monitor:app --host 0.0.0.0 --port 9000
+
+    expose:
+      - "9000"
+
+    volumes:
+      - ./app:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+
+
   telegram-bot:
 
     build: .
