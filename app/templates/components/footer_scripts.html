@@ -314,6 +314,54 @@ function renderAlerts(alerts) {
     alertList.appendChild(list);
 }
 
+function renderDockerStatus(containers) {
+    const container = document.getElementById("docker-status-list");
+    container.innerHTML = "";
+
+    if (!Array.isArray(containers) || containers.length === 0) {
+        container.innerHTML = '<span class="text-muted">No Docker containers found</span>';
+        return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "list-group list-group-flush";
+
+    containers.forEach(item => {
+        const row = document.createElement("div");
+        const badge = document.createElement("span");
+        const name = document.createElement("strong");
+        const status = item.status || "unavailable";
+        const running = status === "running";
+
+        row.className = "list-group-item px-0";
+        badge.className = running
+            ? "badge text-bg-success me-2"
+            : "badge text-bg-secondary me-2";
+        badge.innerText = running ? "🟢" : "🔴";
+        name.innerText = item.name || "Unknown";
+
+        row.append(badge, name, document.createElement("br"));
+        row.append(`Status: ${running ? "Running" : status}`);
+        list.appendChild(row);
+    });
+
+    container.appendChild(list);
+}
+
+async function refreshDockerStatus() {
+    try {
+        const response = await fetch("/api/docker");
+        const data = await response.json();
+        if (!response.ok || data.success !== true) {
+            throw new Error(data.detail || "Docker status unavailable");
+        }
+        renderDockerStatus(data.data);
+    } catch (error) {
+        const container = document.getElementById("docker-status-list");
+        container.innerHTML = '<span class="text-muted">Docker status unavailable</span>';
+    }
+}
+
 function updateDashboardValues(data) {
     document.getElementById("cpu").innerText = `${data.summary.cpu} %`;
     document.getElementById("memory").innerText = `${data.summary.memory} %`;
@@ -335,6 +383,7 @@ async function refreshDashboard() {
         updateDashboardValues(data);
         renderVmRows(data.vm);
         renderAlerts(data.alerts || []);
+        await refreshDockerStatus();
         secondsUntilRefresh = refreshInterval;
         updateRefreshCountdown();
     } catch (error) {
