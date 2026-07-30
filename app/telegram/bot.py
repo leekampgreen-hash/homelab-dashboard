@@ -93,27 +93,20 @@ async def _dashboard_json(path):
 @require_authorized_user
 async def docker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        transport = httpx.AsyncHTTPTransport(uds="/var/run/docker.sock")
-        async with httpx.AsyncClient(
-            transport=transport,
-            base_url="http://docker",
-            timeout=5
-        ) as client:
-            response = await client.get("/containers/json?all=true")
-            response.raise_for_status()
-            containers = response.json()
+        payload = await _dashboard_json("/api/docker")
+        containers = payload.get("data")
 
-        if not isinstance(containers, list):
-            raise ValueError("Invalid Docker response")
+        if payload.get("success") is not True or not isinstance(containers, list):
+            raise ValueError("Invalid dashboard response")
 
-        names = {name.lstrip("/"): item for item in containers for name in item.get("Names", [])}
+        names = {item.get("name"): item for item in containers if isinstance(item, dict)}
         lines = ["🐳 Docker Status", ""]
         for name in ("dashboard", "collector", "telegram-bot"):
             container = names.get(name)
             if container is None:
                 lines.extend([f"🔴 {name}", "Status: unavailable", ""])
                 continue
-            status = container.get("State", "unknown")
+            status = container.get("status", "unknown")
             icon = "🟢" if status == "running" else "🔴"
             lines.extend([f"{icon} {name}", f"Status: {status}", ""])
 
