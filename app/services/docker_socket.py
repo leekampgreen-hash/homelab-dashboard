@@ -32,7 +32,17 @@ def read_container_status():
 
     try:
         _, body = response.split(b"\r\n\r\n", 1)
-        containers = json.loads(body)
+        decoder = json.JSONDecoder()
+        payload = body.decode()
+        containers = []
+        position = 0
+        while position < len(payload):
+            while position < len(payload) and payload[position].isspace():
+                position += 1
+            if position >= len(payload):
+                break
+            item, position = decoder.raw_decode(payload, position)
+            containers.extend(item if isinstance(item, list) else [item])
         by_name = {
             name.lstrip("/"): container
             for container in containers
