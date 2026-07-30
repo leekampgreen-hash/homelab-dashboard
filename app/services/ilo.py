@@ -2,9 +2,11 @@ import requests
 import urllib3
 
 from config import ILO_HOST, ILO_USERNAME, ILO_PASSWORD
+from services.logger import logger
 
 
 urllib3.disable_warnings()
+ILO_REQUEST_TIMEOUT = (3, 10)
 
 
 def get_ilo_session():
@@ -21,6 +23,16 @@ def get_ilo_session():
     return session
 
 
+def get_ilo_response(session, url):
+    try:
+        response = session.get(url, timeout=ILO_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return response
+    except requests.Timeout:
+        logger.warning("iLO request timed out")
+        raise
+
+
 def get_chassis():
 
     session = get_ilo_session()
@@ -30,9 +42,7 @@ def get_chassis():
         "/redfish/v1/Chassis/1/"
     )
 
-    response = session.get(url)
-
-    response.raise_for_status()
+    response = get_ilo_response(session, url)
 
     return response.json()
 
@@ -46,9 +56,7 @@ def get_thermal():
         "/redfish/v1/Chassis/1/Thermal/"
     )
 
-    response = session.get(url)
-
-    response.raise_for_status()
+    response = get_ilo_response(session, url)
 
     return response.json()
 
@@ -112,9 +120,7 @@ def get_power():
         "/redfish/v1/Chassis/1/Power/"
     )
 
-    response = session.get(url)
-
-    response.raise_for_status()
+    response = get_ilo_response(session, url)
 
     return response.json()
 
