@@ -1,4 +1,5 @@
 import os
+from functools import wraps
 
 import httpx
 from dotenv import load_dotenv
@@ -7,14 +8,41 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 
 load_dotenv()
+ALLOWED_USER_IDS = set()
 
 
+def parse_allowed_user_ids():
+    values = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
+    try:
+        return {
+            int(user_id.strip())
+            for user_id in values.split(",")
+            if user_id.strip()
+        }
+    except ValueError:
+        return set()
+
+
+def require_authorized_user(handler):
+    @wraps(handler)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        if user is None or user.id not in ALLOWED_USER_IDS:
+            await update.effective_message.reply_text("Unauthorized")
+            return
+        return await handler(update, context)
+
+    return wrapper
+
+
+@require_authorized_user
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Welcome to the Homelab Dashboard Telegram bot."
     )
 
 
+@require_authorized_user
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "/start - Welcome message\n"
@@ -25,6 +53,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@require_authorized_user
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dashboard_url = os.getenv("DASHBOARD_URL", "http://dashboard:8000").rstrip("/")
 
@@ -61,6 +90,7 @@ async def _dashboard_json(path):
         return response.json()
 
 
+@require_authorized_user
 async def docker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         transport = httpx.AsyncHTTPTransport(uds="/var/run/docker.sock")
@@ -92,6 +122,7 @@ async def docker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Unable to retrieve Docker container status.")
 
 
+@require_authorized_user
 async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         dashboard_data = await _dashboard_json("/api/dashboard")
@@ -124,6 +155,9 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def create_application():
+    global ALLOWED_USER_IDS
+    ALLOWED_USER_IDS = parse_allowed_user_ids()
+
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
