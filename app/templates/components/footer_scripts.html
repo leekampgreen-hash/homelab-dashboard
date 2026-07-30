@@ -31,12 +31,25 @@ async function fetchJson(url, options = {}) {
 
 function showTaskToast(message, type = "info", progress = null) {
     const toast = document.createElement("div");
+    const content = document.createElement("div");
+    const body = document.createElement("div");
+    const closeButton = document.createElement("button");
     toast.className = `toast align-items-center text-bg-${type} border-0`;
     toast.setAttribute("role", "alert");
-    const progressText = progress === null ? "" : ` (${progress}%)`;
-    const spinner = type === "info" ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>' : "";
-    toast.innerHTML = `<div class="d-flex"><div class="toast-body">${spinner}${message}${progressText}</div>` +
-        `<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+    content.className = "d-flex";
+    body.className = "toast-body";
+    if (type === "info") {
+        const spinner = document.createElement("span");
+        spinner.className = "spinner-border spinner-border-sm me-2";
+        spinner.setAttribute("role", "status");
+        body.appendChild(spinner);
+    }
+    body.append(`${message}${progress === null ? "" : ` (${progress}%)`}`);
+    closeButton.type = "button";
+    closeButton.className = "btn-close btn-close-white me-2 m-auto";
+    closeButton.dataset.bsDismiss = "toast";
+    content.append(body, closeButton);
+    toast.appendChild(content);
     document.getElementById("taskToastContainer").appendChild(toast);
     const instance = new bootstrap.Toast(toast, { delay: type === "info" ? 2500 : 5000 });
     instance.show();
@@ -115,16 +128,33 @@ function renderVmActions() {
         const powerState = container.dataset.powerState;
         const actions = getActionState(powerState);
 
-        const dropdownHtml = `<div class="dropdown">
-            <button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">Action</button>
-            <ul class="dropdown-menu">
-                ${actions.map(a => `<li><button class="dropdown-item ${a.disabled ? 'disabled' : ''} text-${a.color}" 
-                    data-vm-id="${vmId}" data-vm-action="${a.action}" 
-                    ${a.disabled ? 'disabled' : ''}>${a.label}</button></li>`).join('')}
-            </ul>
-        </div>`;
-        
-        container.innerHTML = dropdownHtml;
+        const dropdown = document.createElement("div");
+        const toggle = document.createElement("button");
+        const menu = document.createElement("ul");
+
+        dropdown.className = "dropdown";
+        toggle.type = "button";
+        toggle.className = "btn btn-sm btn-primary dropdown-toggle";
+        toggle.dataset.bsToggle = "dropdown";
+        toggle.innerText = "Action";
+        menu.className = "dropdown-menu";
+
+        actions.forEach(action => {
+            const item = document.createElement("li");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `dropdown-item text-${action.color}`;
+            button.dataset.vmId = vmId;
+            button.dataset.vmAction = action.action;
+            button.disabled = action.disabled;
+            if (action.disabled) button.classList.add("disabled");
+            button.innerText = action.label;
+            item.appendChild(button);
+            menu.appendChild(item);
+        });
+
+        dropdown.append(toggle, menu);
+        container.replaceChildren(dropdown);
     });
 }
 
@@ -227,7 +257,7 @@ function renderVmRows(vms) {
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
                     <div><h5 class="card-title mb-1"></h5><span class="vm-mobile-status badge"></span></div>
-                    <div class="vm-actions" data-vm-id="${vm.id}" data-vm-name="${vm.name}" data-power-state="${vm.power_state}"></div>
+                    <div class="vm-actions"></div>
                 </div>
                 <div class="row g-2 small">
                     <div class="col-6"><strong>CPU</strong><div class="vm-mobile-cpu vm-mobile-value"></div></div>
@@ -240,6 +270,10 @@ function renderVmRows(vms) {
                 </div>
             </div>`;
         card.querySelector(".card-title").innerText = vm.name;
+        const mobileActionContainer = card.querySelector(".vm-actions");
+        mobileActionContainer.dataset.vmId = vm.id;
+        mobileActionContainer.dataset.vmName = vm.name;
+        mobileActionContainer.dataset.powerState = vm.power_state;
         const status = card.querySelector(".vm-mobile-status");
         status.className = `vm-mobile-status badge ${getStatusBadgeClass(vm.status)}`;
         status.innerText = vm.status;
