@@ -10,20 +10,27 @@ from services.ilo import get_ilo_health
 from services.alert_engine import generate_alerts
 
 
+def collect_subsystem(name, collector):
+    try:
+        result = collector()
+        logger.info("%s collection succeeded", name)
+        return result
+    except Exception:
+        logger.exception("%s collection failed", name)
+        raise
+
+
 def write_cache():
     now = datetime.now(ZoneInfo("Asia/Jakarta"))
 
-    summary = get_host_summary()
-    hardware = get_hardware_summary()
-    ilo_health = get_ilo_health()
-    vm_list = get_vm_list()
+    summary = collect_subsystem("VMware host summary", get_host_summary)
+    hardware = collect_subsystem("VMware hardware", get_hardware_summary)
+    ilo_health = collect_subsystem("iLO health", get_ilo_health)
+    vm_list = collect_subsystem("VM inventory", get_vm_list)
+    logger.info("VM inventory count=%s", len(vm_list))
 
     hardware["ilo"] = ilo_health
     alerts = generate_alerts(hardware)
-
-    # DEBUG
-    logger.info(f"Hardware type: {type(hardware)}")
-    logger.info(f"Hardware content: {hardware}")
 
     data = {
         "updated": {
@@ -37,9 +44,12 @@ def write_cache():
         "alerts": alerts,
     }
 
-    logger.info(f"Cache data: {data}")
-
-    save_cache(data)
+    try:
+        save_cache(data)
+        logger.info("Dashboard cache write succeeded")
+    except Exception:
+        logger.exception("Dashboard cache write failed")
+        raise
 
 
 while True:
