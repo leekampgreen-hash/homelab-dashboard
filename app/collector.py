@@ -20,12 +20,37 @@ def collect_subsystem(name, collector):
         raise
 
 
+def unavailable_ilo_health():
+    return {
+        "status": "Unavailable",
+        "chassis": {"model": "Unavailable"},
+        "fan": {"status": "Unavailable", "count": 0},
+        "temperature": {"cpu": None, "ambient": None, "storage": None},
+        "power": {"current": None, "average": None, "max": None},
+        "psu": {"status": "Unavailable", "count": 0}
+    }
+
+
+def collect_optional_subsystem(name, collector, fallback):
+    try:
+        result = collector()
+        logger.info("%s collection succeeded", name)
+        return result
+    except Exception as exc:
+        logger.warning("%s collection unavailable: %s", name, exc)
+        return fallback()
+
+
 def write_cache():
     now = datetime.now(ZoneInfo("Asia/Jakarta"))
 
     summary = collect_subsystem("VMware host summary", get_host_summary)
     hardware = collect_subsystem("VMware hardware", get_hardware_summary)
-    ilo_health = collect_subsystem("iLO health", get_ilo_health)
+    ilo_health = collect_optional_subsystem(
+        "iLO health",
+        get_ilo_health,
+        unavailable_ilo_health
+    )
     vm_list = collect_subsystem("VM inventory", get_vm_list)
     logger.info("VM inventory count=%s", len(vm_list))
 
