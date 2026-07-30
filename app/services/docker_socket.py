@@ -44,11 +44,6 @@ def read_container_status():
             item, position = decoder.raw_decode(payload, position)
             containers.extend(item if isinstance(item, list) else [item])
         containers = [item for item in containers if isinstance(item, dict)]
-        logger.info(
-            "Parsed Docker containers type=%s items=%s",
-            type(containers).__name__,
-            containers[:3]
-        )
         by_name = {
             name.lstrip("/"): container
             for container in containers
