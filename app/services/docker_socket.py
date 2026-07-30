@@ -32,6 +32,8 @@ def read_container_status():
 
     try:
         _, body = response.split(b"\r\n\r\n", 1)
+        logger.info("Docker raw response: %s", body[:500])
+        logger.info("Docker response length: %s", len(body))
         decoder = json.JSONDecoder()
         payload = body.decode()
         containers = []
