@@ -1,5 +1,6 @@
 import ssl
 import time
+import uuid
 from datetime import datetime, timezone
 
 from pyVim.connect import Disconnect, SmartConnect
@@ -7,6 +8,10 @@ from pyVmomi import vim
 
 from config import ESXI_HOST, ESXI_USERNAME, ESXI_PASSWORD
 from services.logger import logger
+
+
+_submitted_non_task_statuses = {}
+_SUBMITTED_NON_TASK_STATUS_TTL_SECONDS = 10 * 60
 
 
 def connect_esxi():
@@ -72,7 +77,37 @@ def wait_for_task(task, timeout=None):
 
 
 def serialize_task(task):
+    if isinstance(task, dict):
+        return task
+
     return get_task_status(task)
+
+
+def _cleanup_submitted_non_task_statuses():
+    now = time.monotonic()
+    expired_task_ids = [
+        task_id
+        for task_id, (created_at, _) in _submitted_non_task_statuses.items()
+        if now - created_at >= _SUBMITTED_NON_TASK_STATUS_TTL_SECONDS
+    ]
+    for task_id in expired_task_ids:
+        del _submitted_non_task_statuses[task_id]
+
+
+def _serialize_submitted_non_task():
+    _cleanup_submitted_non_task_statuses()
+    now = datetime.now(timezone.utc).isoformat()
+    task_id = f"guest-shutdown-{uuid.uuid4()}"
+    status = {
+        "id": task_id,
+        "state": "success",
+        "progress": 100,
+        "start_time": now,
+        "complete_time": now,
+        "error": None
+    }
+    _submitted_non_task_statuses[task_id] = (time.monotonic(), status)
+    return status
 
 
 def _find_task(content, task_id):
@@ -95,6 +130,11 @@ def get_task(task_id):
 
 
 def get_task_status_by_id(task_id):
+    _cleanup_submitted_non_task_statuses()
+    submitted_status = _submitted_non_task_statuses.get(task_id)
+    if submitted_status:
+        return submitted_status[1]
+
     si = connect_esxi()
 
     try:
@@ -455,14 +495,23 @@ def reset_vm(vm_id, requester="unknown"):
 
 def shutdown_guest(vm_id, requester="unknown"):
     def submit(vm):
-        task = vm.ShutdownGuest()
-        if task is None:
+        tools_status = getattr(vm.guest, "toolsRunningStatus", None)
+        if tools_status != "guestToolsRunning":
             logger.warning(
-                "VM guest shutdown returned no task; using power-off task for vm_name=%s",
+                "Guest shutdown not requested for vm_name=%s: VMware Tools unavailable",
                 vm.name
             )
-            return vm.PowerOffVM_Task()
-        return task
+            raise ValueError(
+                "VMware Tools is not running; guest shutdown was not requested"
+            )
+
+        try:
+            vm.ShutdownGuest()
+        except Exception as exc:
+            logger.warning("Guest shutdown failed for vm_name=%s", vm.name)
+            raise ValueError("Guest shutdown failed; no forced power-off was issued") from exc
+
+        return _serialize_submitted_non_task()
 
     return _submit_vm_action(
         vm_id,
