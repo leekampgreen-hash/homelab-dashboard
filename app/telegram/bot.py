@@ -148,6 +148,7 @@ def _vm_actions(power_state):
         return [
             ("shutdown", "Shutdown Guest"),
             ("poweroff", "Force Power Off (destructive)"),
+            ("reset", "Reset"),
         ]
     return []
 
@@ -158,6 +159,7 @@ def _action_endpoint(vm_id, action):
         "poweron": f"/api/vm/{encoded_vm_id}/poweron",
         "shutdown": f"/api/vm/{encoded_vm_id}/shutdown",
         "poweroff": f"/api/vm/{encoded_vm_id}/poweroff",
+        "reset": f"/api/vm/{encoded_vm_id}/reset",
     }[action]
 
 
@@ -334,12 +336,20 @@ async def vm_session_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.effective_message.reply_text("Invalid action number.")
             return
         session["action"] = action
-        if action in {"shutdown", "poweroff"}:
+        if action in {"shutdown", "poweroff", "reset"}:
             session["stage"] = STAGE_CONFIRM
             if action == "poweroff":
                 await update.effective_message.reply_text(
                     "⚠️ WARNING\n\n"
                     "Force Power Off may cause data loss or filesystem corruption.\n\n"
+                    "1. Confirm\n"
+                    "0. Cancel"
+                )
+            elif action == "reset":
+                await update.effective_message.reply_text(
+                    "⚠️ WARNING\n\n"
+                    "Reset is equivalent to pressing the physical reset button.\n\n"
+                    "Applications may lose unsaved data.\n\n"
                     "1. Confirm\n"
                     "0. Cancel"
                 )
