@@ -121,11 +121,11 @@ async def _dashboard_request(method, path):
 def _get_vm_session(user_id):
     session = VM_SESSIONS.get(user_id)
     if session is None:
-        return None
+        return None, False
     if time.monotonic() - session["created_at"] >= VM_SESSION_TTL_SECONDS:
         VM_SESSIONS.pop(user_id, None)
-        return None
-    return session
+        return None, True
+    return session, False
 
 
 def _clear_vm_session(user_id, expected_session=None):
@@ -143,12 +143,11 @@ async def _get_vms():
 
 def _vm_actions(power_state):
     if power_state == "poweredOff":
-        return [("poweron", "Power On"), ("cancel", "Cancel")]
+        return [("poweron", "Power On")]
     if power_state == "poweredOn":
         return [
             ("shutdown", "Shutdown Guest"),
             ("poweroff", "Force Power Off (destructive)"),
-            ("cancel", "Cancel"),
         ]
     return []
 
@@ -252,7 +251,7 @@ async def vms_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines = ["Virtual Machines", ""]
         for index, vm in enumerate(vms, start=1):
             lines.append(f"{index}. {vm.get('name', 'Unnamed VM')} - {vm.get('power_state', 'unknown')}")
-        lines.append("\nReply with a VM number.")
+        lines.extend(["0. Cancel", "", "Reply with a VM number."])
         await update.message.reply_text("\n".join(lines))
     except (httpx.HTTPError, ValueError, TypeError, AttributeError):
         await update.message.reply_text("Unable to retrieve virtual machines from the dashboard.")
@@ -262,9 +261,14 @@ async def vms_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def vm_session_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     message = (update.effective_message.text or "").strip()
-    session = _get_vm_session(user_id)
+    session, expired = _get_vm_session(user_id)
     if session is None:
-        await update.effective_message.reply_text("No active VM session. Run /vms to begin.")
+        if expired:
+            await update.effective_message.reply_text(
+                "VM session expired and was cancelled. Run /vms again."
+            )
+        else:
+            await update.effective_message.reply_text("No active VM session. Run /vms to begin.")
         return
 
     if session["stage"] == STAGE_SUBMITTING:
@@ -275,6 +279,20 @@ async def vm_session_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
         selection = int(message)
     except ValueError:
         await update.effective_message.reply_text("Reply with a valid number, or run /vms to start again.")
+        return
+
+    if selection == 0:
+        if "vm_id" in session:
+            logger.info(
+                "Telegram VM action telegram_user=%s vm_id=%s vm_name=%s "
+                "action=%s result=cancelled duration_seconds=0.00",
+                user_id,
+                session["vm_id"],
+                session["vm_name"],
+                session.get("action", "cancel"),
+            )
+        _clear_vm_session(user_id)
+        await update.effective_message.reply_text("VM session cancelled.")
         return
 
     if session["stage"] == STAGE_SELECT_VM:
@@ -299,6 +317,7 @@ async def vm_session_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
             })
             lines = [f"{vm.get('name', 'VM')} ({vm.get('power_state', 'unknown')})", ""]
             lines.extend(f"{index}. {label}" for index, (_, label) in enumerate(actions, start=1))
+            lines.append("0. Cancel")
             await update.effective_message.reply_text("\n".join(lines))
         except (httpx.HTTPError, ValueError, TypeError, AttributeError):
             _clear_vm_session(user_id)
@@ -314,17 +333,6 @@ async def vm_session_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except IndexError:
             await update.effective_message.reply_text("Invalid action number.")
             return
-        if action == "cancel":
-            _clear_vm_session(user_id)
-            logger.info(
-                "Telegram VM action telegram_user=%s vm_id=%s vm_name=%s "
-                "action=cancel result=cancelled duration_seconds=0.00",
-                user_id,
-                session["vm_id"],
-                session["vm_name"],
-            )
-            await update.effective_message.reply_text("VM action cancelled.")
-            return
         session["action"] = action
         if action in {"shutdown", "poweroff"}:
             session["stage"] = STAGE_CONFIRM
@@ -333,31 +341,19 @@ async def vm_session_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     "⚠️ WARNING\n\n"
                     "Force Power Off may cause data loss or filesystem corruption.\n\n"
                     "1. Confirm\n"
-                    "2. Cancel"
+                    "0. Cancel"
                 )
             else:
                 await update.effective_message.reply_text(
-                    f"Confirm {label}?\n1. Confirm\n2. Cancel"
+                    f"Confirm {label}?\n1. Confirm\n0. Cancel"
                 )
             return
         await _submit_vm_action(update, user_id, session)
         return
 
     if session["stage"] == STAGE_CONFIRM:
-        if selection == 2:
-            _clear_vm_session(user_id)
-            logger.info(
-                "Telegram VM action telegram_user=%s vm_id=%s vm_name=%s "
-                "action=%s result=cancelled duration_seconds=0.00",
-                user_id,
-                session["vm_id"],
-                session["vm_name"],
-                session["action"],
-            )
-            await update.effective_message.reply_text("VM action cancelled.")
-            return
         if selection != 1:
-            await update.effective_message.reply_text("Reply 1 to confirm or 2 to cancel.")
+            await update.effective_message.reply_text("Reply 1 to confirm or 0 to cancel.")
             return
         await _submit_vm_action(update, user_id, session)
 
