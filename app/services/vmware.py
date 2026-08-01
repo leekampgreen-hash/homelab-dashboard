@@ -564,6 +564,34 @@ def list_snapshots(vm_identifier):
         Disconnect(si)
 
 
+def get_snapshot_inventory():
+    """Return all VM snapshots keyed by stable VM and snapshot identifiers."""
+    si = connect_esxi()
+    view = None
+
+    try:
+        content = si.RetrieveContent()
+        view = content.viewManager.CreateContainerView(
+            content.rootFolder,
+            [vim.VirtualMachine],
+            True
+        )
+        inventory = {}
+        for vm in view.view:
+            snapshots = _flatten_snapshots(
+                vm.snapshot.rootSnapshotList if vm.snapshot else []
+            )
+            inventory[vm._moId] = {
+                "vm_name": vm.name,
+                "snapshots": {snapshot["id"]: snapshot for snapshot in snapshots},
+            }
+        return inventory
+    finally:
+        if view is not None:
+            view.Destroy()
+        Disconnect(si)
+
+
 def _get_snapshot_from_vm(vm, snapshot_identifier):
     def find(snapshot_list):
         for snapshot in snapshot_list or []:
