@@ -68,6 +68,9 @@ services:
     env_file:
       - .env
 
+    environment:
+      PYTHONPATH: /app
+
     volumes:
       - ./app:/app
       - ./data:/app/data
