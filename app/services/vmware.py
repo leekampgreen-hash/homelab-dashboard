@@ -180,19 +180,45 @@ def get_host_summary():
 
         memory_percent = round((memory_usage / memory_total) * 100, 1)
 
-        datastore = host.datastore[0]
+        datastores = []
+        for datastore in host.datastore or []:
+            try:
+                capacity_bytes = datastore.summary.capacity
+                free_bytes = datastore.summary.freeSpace
+                if (
+                    not datastore._moId
+                    or not isinstance(capacity_bytes, (int, float))
+                    or isinstance(capacity_bytes, bool)
+                    or capacity_bytes <= 0
+                    or not isinstance(free_bytes, (int, float))
+                    or isinstance(free_bytes, bool)
+                    or free_bytes < 0
+                    or free_bytes > capacity_bytes
+                ):
+                    continue
+                usage_percent = round(
+                    ((capacity_bytes - free_bytes) / capacity_bytes) * 100,
+                    1,
+                )
+            except (AttributeError, TypeError):
+                continue
+            datastores.append({
+                "id": datastore._moId,
+                "name": datastore.name or datastore._moId,
+                "capacity_bytes": capacity_bytes,
+                "free_bytes": free_bytes,
+                "usage_percent": usage_percent,
+            })
 
-        datastore_used = datastore.summary.capacity - datastore.summary.freeSpace
-
-        datastore_percent = round(
-            (datastore_used / datastore.summary.capacity) * 100,
-            1
-        )
+        datastore_percent = datastores[0]["usage_percent"] if datastores else 0
 
         return {
+            "host_name": host.name or ESXI_HOST,
+            "status": "online",
             "cpu": cpu_percent,
             "memory": memory_percent,
-            "datastore": datastore_percent
+            "datastore": datastore_percent,
+            "datastores": datastores,
         }
 
     finally:
