@@ -63,7 +63,7 @@ services:
 
     restart: unless-stopped
 
-    command: python -m telegram.bot
+    command: python telegram/bot.py
 
     env_file:
       - .env
