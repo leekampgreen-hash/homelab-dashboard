@@ -70,3 +70,4 @@ services:
 
     volumes:
       - ./app:/app
+      - ./data:/app/data

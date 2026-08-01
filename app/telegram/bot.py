@@ -16,13 +16,20 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from services.alert_settings import (
+    load_alert_settings,
+    set_alert_enabled,
+    set_alert_threshold,
+)
 
 
 load_dotenv()
 ALLOWED_USER_IDS = set()
 VM_SESSIONS = {}
 SNAPSHOT_SESSIONS = {}
+ALERT_SESSIONS = {}
 VM_SESSION_TTL_SECONDS = 5 * 60
+ALERT_SESSION_TTL_SECONDS = 5 * 60
 VM_TASK_TIMEOUT_SECONDS = 30
 VM_TASK_POLL_INTERVAL_SECONDS = 2
 STAGE_SELECT_VM = "select_vm"
@@ -37,7 +44,30 @@ SNAPSHOT_STAGE_SELECT_SNAPSHOT = "select_snapshot"
 SNAPSHOT_STAGE_RESTORE_CONFIRM = "restore_confirm"
 SNAPSHOT_STAGE_DELETE_CONFIRM = "delete_confirm"
 SNAPSHOT_STAGE_SUBMITTING = "submitting"
+ALERT_STAGE_TOP = "top"
+ALERT_STAGE_CATEGORY = "category"
+ALERT_STAGE_ACTION = "action"
+ALERT_STAGE_THRESHOLD = "threshold"
 logger = logging.getLogger(__name__)
+
+ALERT_CATEGORIES = {
+    "hardware": [
+        ("host_online", "ESXi Host Online/Offline"),
+        ("ilo_health", "iLO Hardware Health"),
+        ("fan_status", "Fan Status"),
+        ("psu_status", "PSU Status"),
+        ("temperature", "Temperature"),
+        ("datastore_usage", "Datastore Usage"),
+    ],
+    "vm": [
+        ("powered_on", "VM Powered On"),
+        ("powered_off", "VM Powered Off"),
+        ("reset", "VM Reset"),
+        ("snapshot_created", "Snapshot Created"),
+        ("snapshot_restored", "Snapshot Restored"),
+        ("snapshot_deleted", "Snapshot Deleted"),
+    ],
+}
 
 
 def parse_allowed_user_ids():
@@ -80,7 +110,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/docker - Show Docker container status\n"
         "/health - Show homelab health\n"
         "/vms - Control a virtual machine\n"
-        "/snapshot - Manage VM snapshots"
+        "/snapshot - Manage VM snapshots\n"
+        "/alerts - Configure alert notifications"
     )
 
 
@@ -159,6 +190,75 @@ def _clear_snapshot_session(user_id, expected_session=None):
         SNAPSHOT_SESSIONS.pop(user_id, None)
 
 
+def _get_alert_session(user_id):
+    session = ALERT_SESSIONS.get(user_id)
+    if session is None:
+        return None, False
+    if time.monotonic() - session["created_at"] >= ALERT_SESSION_TTL_SECONDS:
+        ALERT_SESSIONS.pop(user_id, None)
+        return None, True
+    return session, False
+
+
+def _clear_alert_session(user_id):
+    ALERT_SESSIONS.pop(user_id, None)
+
+
+def _alert_status(enabled):
+    return "Enabled" if enabled else "Disabled"
+
+
+async def _show_alert_top_menu(message):
+    await message.reply_text(
+        "Alert Notification\n\n"
+        "1. Hardware Alerts\n"
+        "2. VM Alerts\n"
+        "3. Alert Status\n"
+        "0. Cancel"
+    )
+
+
+async def _show_alert_category_menu(message, category):
+    title = "Hardware Alerts" if category == "hardware" else "VM Alerts"
+    lines = [title, ""]
+    lines.extend(
+        f"{index}. {label}"
+        for index, (_, label) in enumerate(ALERT_CATEGORIES[category], start=1)
+    )
+    lines.append("0. Back")
+    await message.reply_text("\n".join(lines))
+
+
+async def _show_alert_action_menu(message, session):
+    settings = load_alert_settings()
+    config = settings[session["category"]][session["alert_name"]]
+    lines = [session["alert_label"], "", f"Status: {_alert_status(config['enabled'])}"]
+    if "threshold" in config:
+        unit = "°C" if session["alert_name"] == "temperature" else "%"
+        lines.append(f"Threshold: {config['threshold']}{unit}")
+    lines.extend(["", "1. Enable", "2. Disable"])
+    if "threshold" in config:
+        lines.append("3. Change Threshold")
+    lines.append("0. Back")
+    await message.reply_text("\n".join(lines))
+
+
+async def _show_alert_status(message):
+    settings = load_alert_settings()
+    lines = ["Alert Status", ""]
+    for category, title in (("hardware", "Hardware"), ("vm", "VM")):
+        lines.append(f"{title}:")
+        for alert_name, label in ALERT_CATEGORIES[category]:
+            config = settings[category][alert_name]
+            suffix = ""
+            if "threshold" in config:
+                unit = "°C" if alert_name == "temperature" else "%"
+                suffix = f" ({config['threshold']}{unit})"
+            lines.append(f"- {label}: {_alert_status(config['enabled'])}{suffix}")
+        lines.append("")
+    await message.reply_text("\n".join(lines).rstrip())
+
+
 async def _get_vms():
     payload = await _dashboard_json("/api/vm")
     vms = payload.get("data")
@@ -231,8 +331,8 @@ def _action_task_id(payload):
     raise ValueError("Invalid action response")
 
 
-async def _poll_vm_task(task_id):
-    deadline = time.monotonic() + VM_TASK_TIMEOUT_SECONDS
+async def _poll_vm_task(task_id, timeout=None):
+    deadline = time.monotonic() + (timeout or VM_TASK_TIMEOUT_SECONDS)
     while time.monotonic() < deadline:
         payload = await _dashboard_json(f"/api/tasks/{quote(str(task_id), safe='')}")
         task = payload.get("data")
@@ -291,6 +391,7 @@ async def vms_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     _clear_vm_session(user_id)
     _clear_snapshot_session(user_id)
+    _clear_alert_session(user_id)
     try:
         vms = await _get_vms()
         if not vms:
@@ -456,7 +557,12 @@ async def _submit_snapshot_action(update, user_id, session):
         task_id = _action_task_id(payload)
 
         await update.effective_message.reply_text("Snapshot action submitted. Checking status...")
-        result = await _poll_vm_task(task_id)
+        snapshot_timeouts = {
+            "create_snapshot": 60,
+            "restore_snapshot": 120,
+            "delete_snapshot": 300,
+        }
+        result = await _poll_vm_task(task_id, snapshot_timeouts[action])
         if result == "success":
             await update.effective_message.reply_text("Snapshot action completed.")
         elif result == "error":
@@ -490,6 +596,7 @@ async def snapshot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     _clear_snapshot_session(user_id)
     _clear_vm_session(user_id)
+    _clear_alert_session(user_id)
     try:
         vms = await _get_vms()
         if not vms:
@@ -670,8 +777,156 @@ async def _handle_snapshot_session_message(update, user_id, session):
 
 
 @require_authorized_user
+async def alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    _clear_alert_session(user_id)
+    _clear_vm_session(user_id)
+    _clear_snapshot_session(user_id)
+    ALERT_SESSIONS[user_id] = {
+        "created_at": time.monotonic(),
+        "stage": ALERT_STAGE_TOP,
+    }
+    await _show_alert_top_menu(update.message)
+
+
+async def _handle_alert_session_message(update, user_id, session):
+    message = (update.effective_message.text or "").strip()
+    try:
+        selection = int(message)
+    except ValueError:
+        if session["stage"] == ALERT_STAGE_THRESHOLD:
+            if session["alert_name"] == "temperature":
+                await update.effective_message.reply_text(
+                    "Enter a temperature threshold between 1 and 120 °C."
+                )
+            else:
+                await update.effective_message.reply_text(
+                    "Enter a datastore threshold between 1 and 100%."
+                )
+            return
+        await update.effective_message.reply_text("Reply with a valid number.")
+        return
+
+    if session["stage"] == ALERT_STAGE_TOP:
+        if selection == 0:
+            _clear_alert_session(user_id)
+            await update.effective_message.reply_text("Alert session cancelled.")
+            return
+        category = {1: "hardware", 2: "vm"}.get(selection)
+        if category:
+            session.update({"stage": ALERT_STAGE_CATEGORY, "category": category})
+            await _show_alert_category_menu(update.effective_message, category)
+            return
+        if selection == 3:
+            try:
+                await _show_alert_status(update.effective_message)
+                await _show_alert_top_menu(update.effective_message)
+            except OSError:
+                await update.effective_message.reply_text("Unable to load alert settings.")
+            return
+        await update.effective_message.reply_text("Invalid alert menu option.")
+        return
+
+    if session["stage"] == ALERT_STAGE_CATEGORY:
+        if selection == 0:
+            session["stage"] = ALERT_STAGE_TOP
+            await _show_alert_top_menu(update.effective_message)
+            return
+        alerts = ALERT_CATEGORIES[session["category"]]
+        if not 1 <= selection <= len(alerts):
+            await update.effective_message.reply_text("Invalid alert number.")
+            return
+        alert_name, alert_label = alerts[selection - 1]
+        session.update({
+            "stage": ALERT_STAGE_ACTION,
+            "alert_name": alert_name,
+            "alert_label": alert_label,
+        })
+        try:
+            await _show_alert_action_menu(update.effective_message, session)
+        except OSError:
+            await update.effective_message.reply_text("Unable to load alert settings.")
+        return
+
+    if session["stage"] == ALERT_STAGE_ACTION:
+        if selection == 0:
+            session["stage"] = ALERT_STAGE_CATEGORY
+            await _show_alert_category_menu(update.effective_message, session["category"])
+            return
+        if selection in {1, 2}:
+            enabled = selection == 1
+            try:
+                old_value, new_value = set_alert_enabled(
+                    session["category"], session["alert_name"], enabled
+                )
+                logger.info(
+                    "Telegram alert setting telegram_user=%s alert_name=%s old_value=%s new_value=%s",
+                    user_id,
+                    session["alert_name"],
+                    old_value,
+                    new_value,
+                )
+                await _show_alert_action_menu(update.effective_message, session)
+            except (KeyError, OSError):
+                await update.effective_message.reply_text("Unable to update alert settings.")
+            return
+        settings = load_alert_settings()
+        config = settings[session["category"]][session["alert_name"]]
+        if selection == 3 and "threshold" in config:
+            session["stage"] = ALERT_STAGE_THRESHOLD
+            unit = "°C" if session["alert_name"] == "temperature" else "%"
+            await update.effective_message.reply_text(
+                f"Current threshold: {config['threshold']}{unit}\n\n"
+                "Enter new threshold.\n"
+                "0. Back"
+            )
+            return
+        await update.effective_message.reply_text("Invalid alert menu option.")
+        return
+
+    if session["stage"] == ALERT_STAGE_THRESHOLD:
+        if selection == 0:
+            session["stage"] = ALERT_STAGE_ACTION
+            await _show_alert_action_menu(update.effective_message, session)
+            return
+        try:
+            old_value, new_value = set_alert_threshold(
+                session["category"], session["alert_name"], selection
+            )
+            logger.info(
+                "Telegram alert setting telegram_user=%s alert_name=%s old_value=%s new_value=%s",
+                user_id,
+                session["alert_name"],
+                old_value,
+                new_value,
+            )
+            session["stage"] = ALERT_STAGE_ACTION
+            await _show_alert_action_menu(update.effective_message, session)
+        except ValueError:
+            if session["alert_name"] == "temperature":
+                await update.effective_message.reply_text(
+                    "Enter a temperature threshold between 1 and 120 °C."
+                )
+            else:
+                await update.effective_message.reply_text(
+                    "Enter a datastore threshold between 1 and 100%."
+                )
+        except (KeyError, OSError):
+            await update.effective_message.reply_text("Unable to update alert settings.")
+
+
+@require_authorized_user
 async def session_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    alert_session, alert_expired = _get_alert_session(user_id)
+    if alert_session is not None:
+        await _handle_alert_session_message(update, user_id, alert_session)
+        return
+    if alert_expired:
+        await update.effective_message.reply_text(
+            "Alert session expired and was cancelled. Run /alerts again."
+        )
+        return
     snapshot_session, snapshot_expired = _get_snapshot_session(user_id)
     if snapshot_session is not None:
         await _handle_snapshot_session_message(update, user_id, snapshot_session)
@@ -757,6 +1012,7 @@ def create_application():
     application.add_handler(CommandHandler("health", health_command))
     application.add_handler(CommandHandler("vms", vms_command))
     application.add_handler(CommandHandler("snapshot", snapshot_command))
+    application.add_handler(CommandHandler("alerts", alerts_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, session_message))
     return application
 
