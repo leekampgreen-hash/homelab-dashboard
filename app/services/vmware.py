@@ -266,6 +266,11 @@ def serialize_virtual_machine(vm):
     except (AttributeError, TypeError):
         resource_pool = "--"
 
+    try:
+        esxi_host = vm.runtime.host.name or "--"
+    except (AttributeError, TypeError):
+        esxi_host = "--"
+
     provisioned = used = 0
     try:
         for usage in vm.storage.perDatastoreUsage:
@@ -294,6 +299,7 @@ def serialize_virtual_machine(vm):
         "datastore": datastore,
         "cluster": cluster,
         "resource_pool": resource_pool,
+        "esxi_host": esxi_host,
         # Backward-compatible aliases used by the existing dashboard.
         "status": status,
         "memory": memory_mb,

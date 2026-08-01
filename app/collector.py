@@ -15,6 +15,13 @@ from services.snapshot_events import (
     snapshot_events,
 )
 from services.telegram_notifier import send_snapshot_notification
+from services.telegram_notifier import send_vm_notification
+from services.vm_events import (
+    build_vm_inventory,
+    load_vm_baseline,
+    power_state_events,
+    save_vm_baseline,
+)
 
 
 def collect_subsystem(name, collector):
@@ -89,6 +96,39 @@ def collect_snapshot_events():
         )
 
 
+def collect_vm_power_events(vm_list, timestamp):
+    current_inventory = build_vm_inventory(vm_list)
+    previous_inventory = load_vm_baseline()
+    try:
+        events = [] if previous_inventory is None else power_state_events(
+            previous_inventory, current_inventory, timestamp
+        )
+        save_vm_baseline(current_inventory)
+    except Exception as exc:
+        logger.warning("VM power-state baseline update failed: %s", exc)
+        return
+
+    if previous_inventory is None:
+        logger.info("VM power-state baseline established")
+        return
+
+    settings = load_alert_settings()
+    for event in events:
+        delivery = {"attempted": 0, "delivered": 0}
+        if settings["vm"][event["event_type"]]["enabled"]:
+            delivery = send_vm_notification(event)
+        logger.info(
+            "VM power event type=%s vm_id=%s vm_name=%s esxi_host=%s "
+            "delivery_result=%s/%s",
+            event["event_type"],
+            event["vm_id"],
+            event["vm_name"],
+            event["esxi_host"],
+            delivery["delivered"],
+            delivery["attempted"],
+        )
+
+
 def write_cache():
     now = datetime.now(ZoneInfo("Asia/Jakarta"))
 
@@ -101,6 +141,7 @@ def write_cache():
     )
     vm_list = collect_subsystem("VM inventory", get_vm_list)
     logger.info("VM inventory count=%s", len(vm_list))
+    collect_vm_power_events(vm_list, now.strftime("%Y-%m-%d %H:%M:%S"))
     collect_snapshot_events()
 
     hardware["ilo"] = ilo_health

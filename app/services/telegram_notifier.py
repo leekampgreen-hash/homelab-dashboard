@@ -33,14 +33,24 @@ def _snapshot_message(event):
     return "\n".join(lines)
 
 
-def send_snapshot_notification(event):
+def _vm_message(event):
+    is_powered_on = event["event_type"] == "powered_on"
+    return "\n".join([
+        "🟢 VM Powered On" if is_powered_on else "🔴 VM Powered Off",
+        "",
+        f"VM: {event['vm_name']}",
+        f"Host: {event.get('esxi_host', '--')}",
+        f"Time: {event['timestamp']}",
+    ])
+
+
+def _send_message(message):
     try:
         token = os.getenv("TELEGRAM_BOT_TOKEN")
         recipients = _allowed_user_ids()
         if not token or not recipients:
             return {"attempted": 0, "delivered": 0}
 
-        message = _snapshot_message(event)
         delivered = 0
         for user_id in recipients:
             try:
@@ -54,5 +64,19 @@ def send_snapshot_notification(event):
             except Exception:
                 continue
         return {"attempted": len(recipients), "delivered": delivered}
+    except Exception:
+        return {"attempted": 0, "delivered": 0}
+
+
+def send_snapshot_notification(event):
+    try:
+        return _send_message(_snapshot_message(event))
+    except Exception:
+        return {"attempted": 0, "delivered": 0}
+
+
+def send_vm_notification(event):
+    try:
+        return _send_message(_vm_message(event))
     except Exception:
         return {"attempted": 0, "delivered": 0}
