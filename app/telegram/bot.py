@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import time
+from datetime import datetime
 from functools import wraps
 from urllib.parse import quote
 
@@ -30,7 +31,6 @@ STAGE_CONFIRM = "confirm"
 STAGE_SUBMITTING = "submitting"
 SNAPSHOT_STAGE_SELECT_VM = "select_vm"
 SNAPSHOT_STAGE_SELECT_ACTION = "select_action"
-SNAPSHOT_STAGE_CREATE_NAME = "create_name"
 SNAPSHOT_STAGE_CREATE_DESCRIPTION = "create_description"
 SNAPSHOT_STAGE_CREATE_CONFIRM = "create_confirm"
 SNAPSHOT_STAGE_SELECT_SNAPSHOT = "select_snapshot"
@@ -523,22 +523,15 @@ async def _handle_snapshot_session_message(update, user_id, session):
         await update.effective_message.reply_text("Snapshot session cancelled.")
         return
 
-    if session["stage"] == SNAPSHOT_STAGE_CREATE_NAME:
-        if not message:
-            await update.effective_message.reply_text("Snapshot name cannot be empty.")
-            return
-        session["snapshot_name"] = message
-        session["stage"] = SNAPSHOT_STAGE_CREATE_DESCRIPTION
-        await update.effective_message.reply_text(
-            "Enter a snapshot description, or send - for no description."
-        )
-        return
-
     if session["stage"] == SNAPSHOT_STAGE_CREATE_DESCRIPTION:
         session["snapshot_description"] = "" if message == "-" else message
         session["stage"] = SNAPSHOT_STAGE_CREATE_CONFIRM
         await update.effective_message.reply_text(
-            f"Create snapshot '{session['snapshot_name']}'?\n1. Confirm\n0. Cancel"
+            "Create snapshot?\n\n"
+            f"Name:\n{session['snapshot_name']}\n\n"
+            f"Description:\n{session['snapshot_description']}\n\n"
+            "1. Confirm\n"
+            "0. Cancel"
         )
         return
 
@@ -588,9 +581,14 @@ async def _handle_snapshot_session_message(update, user_id, session):
             return
         session["action"] = action
         if action == "create_snapshot":
-            session["stage"] = SNAPSHOT_STAGE_CREATE_NAME
+            session["snapshot_name"] = datetime.now().strftime("AUTO-%Y%m%d-%H%M%S")
+            session["stage"] = SNAPSHOT_STAGE_CREATE_DESCRIPTION
             await update.effective_message.reply_text(
-                "Enter a snapshot name.\n\nExample:\nBefore Windows Update"
+                "Snapshot name will be generated automatically.\n\n"
+                "Enter snapshot description.\n\n"
+                "Example:\n"
+                "Before Windows Update\n\n"
+                "Send - for no description."
             )
             return
         try:
