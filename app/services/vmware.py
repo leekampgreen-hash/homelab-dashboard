@@ -480,6 +480,8 @@ def _submit_vm_action(vm_id, action, submit, valid_states, requester="unknown"):
 
         task = submit(vm)
         task_status = serialize_task(task)
+        task_status["vm_id"] = vm._moId
+        task_status["vm_name"] = vm.name
         logger.info(
             "VM action submitted vm_name=%s action=%s requester=%s "
             "timestamp=%s task_id=%s",

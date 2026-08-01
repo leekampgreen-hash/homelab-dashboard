@@ -1,11 +1,16 @@
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from config import ESXI_HOST
 from services.cache import load_cache, save_cache
 from services.logger import logger
-from services.vmware import get_snapshot_inventory, get_vm_list, get_host_summary
+from services.vmware import (
+    get_host_summary,
+    get_snapshot_inventory,
+    get_task_status_by_id,
+    get_vm_list,
+)
 from services.hardware import get_hardware_summary
 from services.ilo import get_ilo_health
 from services.alert_engine import generate_alerts
@@ -19,7 +24,13 @@ from services.telegram_notifier import (
     send_datastore_notification,
     send_hardware_notification,
     send_snapshot_notification,
+    send_vm_reset_notification,
     send_vm_notification,
+)
+from services.pending_events import (
+    claim_notification,
+    load_pending_events,
+    update_pending_event,
 )
 from services.hardware_events import (
     build_hardware_inventory,
@@ -236,7 +247,96 @@ def collect_datastore_events(summary, timestamp):
         )
 
 
-def write_cache():
+def collect_pending_events():
+    settings = load_alert_settings()
+    for event in load_pending_events():
+        if event.get("event_type") != "vm_reset":
+            continue
+
+        operation_id = event.get("operation_id")
+        status = event.get("status")
+        if not operation_id:
+            continue
+
+        if status in {"accepted", "queued", "running"}:
+            try:
+                task = get_task_status_by_id(event.get("task_id"))
+            except Exception:
+                logger.warning(
+                    "Pending event task unavailable operation_id=%s event_type=%s "
+                    "vm_id=%s vm_name=%s source=%s status=%s",
+                    operation_id,
+                    event.get("event_type"),
+                    event.get("vm_id"),
+                    event.get("vm_name"),
+                    event.get("source"),
+                    status,
+                )
+                continue
+
+            task_state = task.get("state")
+            if task_state in {"queued", "running"}:
+                event = update_pending_event(operation_id, status=task_state) or event
+            elif task_state == "success":
+                completed_at = task.get("complete_time")
+                if isinstance(completed_at, str):
+                    try:
+                        datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                    except ValueError:
+                        completed_at = None
+                else:
+                    completed_at = None
+                event = update_pending_event(
+                    operation_id,
+                    status="completed",
+                    completed_at=completed_at or datetime.now(timezone.utc).isoformat(),
+                ) or event
+            elif task_state in {"error", "cancelled"}:
+                event = update_pending_event(
+                    operation_id,
+                    status="failed",
+                    failed_at=datetime.now(timezone.utc).isoformat(),
+                ) or event
+
+        if event.get("status") != "completed" or event.get("notified"):
+            continue
+
+        if not settings["vm"]["reset"]["enabled"]:
+            claimed_event = claim_notification(operation_id, "disabled")
+            if claimed_event:
+                logger.info(
+                    "Pending event operation_id=%s event_type=%s vm_id=%s "
+                    "vm_name=%s source=%s status=%s delivery_result=%s",
+                    operation_id,
+                    claimed_event["event_type"],
+                    claimed_event["vm_id"],
+                    claimed_event["vm_name"],
+                    claimed_event["source"],
+                    claimed_event["status"],
+                    "disabled",
+                )
+            continue
+
+        claimed_event = claim_notification(operation_id)
+        if not claimed_event:
+            continue
+        delivery = send_vm_reset_notification(claimed_event)
+        delivery_result = f"{delivery['delivered']}/{delivery['attempted']}"
+        update_pending_event(operation_id, delivery_result=delivery_result)
+        logger.info(
+            "Pending event operation_id=%s event_type=%s vm_id=%s vm_name=%s "
+            "source=%s status=%s delivery_result=%s",
+            operation_id,
+            claimed_event["event_type"],
+            claimed_event["vm_id"],
+            claimed_event["vm_name"],
+            claimed_event["source"],
+            claimed_event["status"],
+            delivery_result,
+        )
+
+
+def _write_cache():
     now = datetime.now(ZoneInfo("Asia/Jakarta"))
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -318,6 +418,16 @@ def write_cache():
     except Exception:
         logger.exception("Dashboard cache write failed")
         raise
+
+
+def write_cache():
+    try:
+        _write_cache()
+    finally:
+        try:
+            collect_pending_events()
+        except Exception:
+            logger.warning("Pending event queue processing failed")
 
 
 while True:

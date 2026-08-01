@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from services.cache import load_cache
 from services.docker import DockerMonitorUnavailableError, get_docker_status
 from services.logger import logger
+from services.pending_events import create_pending_event
 from services.vmware import (
     create_snapshot,
     delete_snapshot,
@@ -98,6 +99,10 @@ def requester_from(request):
     return request.client.host if request.client else "unknown"
 
 
+def reset_source_from(request):
+    return "telegram" if request.headers.get("X-Homelab-Source") == "telegram" else "dashboard"
+
+
 async def run_vm_action(request, vm_id, action, operation, *args):
     try:
         task = action(vm_id, *args, requester=requester_from(request))
@@ -128,7 +133,24 @@ async def api_vm_power_off(vm_id: str, request: Request):
 
 @app.post("/api/vm/{vm_id}/reset")
 async def api_vm_reset(vm_id: str, request: Request):
-    return await run_vm_action(request, vm_id, reset_vm, "reset VM")
+    try:
+        task = reset_vm(vm_id, requester=requester_from(request))
+        event = create_pending_event("vm_reset", task, reset_source_from(request))
+        logger.info(
+            "Pending event operation_id=%s event_type=%s vm_id=%s vm_name=%s "
+            "source=%s status=%s",
+            event["operation_id"],
+            event["event_type"],
+            event["vm_id"],
+            event["vm_name"],
+            event["source"],
+            event["status"],
+        )
+        return accepted_task(task)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise vmware_error("Unable to reset VM", "reset VM", exc)
 
 
 @app.post("/api/vm/{vm_id}/shutdown")

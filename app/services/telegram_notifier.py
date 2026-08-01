@@ -136,6 +136,16 @@ def _datastore_message(event):
     ])
 
 
+def _vm_reset_message(event):
+    return "\n".join([
+        "🔄 VM Reset",
+        "",
+        f"VM: {event['vm_name']}",
+        f"Source: {event['source']}",
+        f"Time: {event['completed_at']}",
+    ])
+
+
 def _send_message(message):
     try:
         token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -184,5 +194,12 @@ def send_hardware_notification(event):
 def send_datastore_notification(event):
     try:
         return _send_message(_datastore_message(event))
+    except Exception:
+        return {"attempted": 0, "delivered": 0}
+
+
+def send_vm_reset_notification(event):
+    try:
+        return _send_message(_vm_reset_message(event))
     except Exception:
         return {"attempted": 0, "delivered": 0}

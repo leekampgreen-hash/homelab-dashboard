@@ -152,10 +152,12 @@ async def _dashboard_json(path):
         return response.json()
 
 
-async def _dashboard_request(method, path, json=None):
+async def _dashboard_request(method, path, json=None, headers=None):
     dashboard_url = os.getenv("DASHBOARD_URL", "http://dashboard:8000").rstrip("/")
     async with httpx.AsyncClient(timeout=5) as client:
-        response = await client.request(method, f"{dashboard_url}{path}", json=json)
+        response = await client.request(
+            method, f"{dashboard_url}{path}", json=json, headers=headers
+        )
         response.raise_for_status()
         return response.json()
 
@@ -355,7 +357,10 @@ async def _submit_vm_action(update, user_id, session):
     result = "error"
 
     try:
-        payload = await _dashboard_request("POST", _action_endpoint(vm_id, action))
+        headers = {"X-Homelab-Source": "telegram"} if action == "reset" else None
+        payload = await _dashboard_request(
+            "POST", _action_endpoint(vm_id, action), headers=headers
+        )
         task_id = _action_task_id(payload)
 
         await update.effective_message.reply_text("VM action submitted. Checking status...")
