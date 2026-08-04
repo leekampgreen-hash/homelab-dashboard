@@ -109,6 +109,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/status - Check dashboard status\n"
         "/docker - Show Docker container status\n"
         "/health - Show homelab health\n"
+        "/vmusage <VM_NAME> - Show VM runtime usage\n"
         "/vms - Control a virtual machine\n"
         "/snapshot - Manage VM snapshots\n"
         "/alerts - Configure alert notifications"
@@ -267,6 +268,50 @@ async def _get_vms():
     if payload.get("success") is not True or not isinstance(vms, list):
         raise ValueError("Invalid dashboard response")
     return [vm for vm in vms if isinstance(vm, dict) and vm.get("id")]
+
+
+def _metric_value(value):
+    if isinstance(value, (int, float)):
+        return f"{value:g}"
+    return "--"
+
+
+@require_authorized_user
+async def vmusage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /vmusage VM_NAME")
+        return
+
+    vm_name = " ".join(context.args).strip()
+    try:
+        payload = await _dashboard_json(
+            f"/api/vm/{quote(vm_name, safe='')}/metrics"
+        )
+        metrics = payload.get("data")
+        if payload.get("success") is not True or not isinstance(metrics, dict):
+            raise ValueError("Invalid metrics response")
+
+        memory_usage = _metric_value(metrics.get("memory_usage_mb"))
+        memory_capacity = _metric_value(metrics.get("memory_capacity_mb"))
+        cpu_percent = _metric_value(metrics.get("cpu_usage_percent"))
+        memory_percent = _metric_value(metrics.get("memory_usage_percent"))
+        await update.message.reply_text(
+            f"VM: {metrics.get('name', vm_name)}\n"
+            f"Power: {metrics.get('power_state', '--')}\n\n"
+            "CPU:\n"
+            f"{cpu_percent + '%' if cpu_percent != '--' else '--'} "
+            f"({_metric_value(metrics.get('cpu_usage_mhz'))} MHz)\n\n"
+            "Memory:\n"
+            f"{memory_percent + '%' if memory_percent != '--' else '--'} "
+            f"({memory_usage} MB / {memory_capacity} MB)"
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            await update.message.reply_text("VM not found.")
+        else:
+            await update.message.reply_text("Unable to retrieve VM usage.")
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        await update.message.reply_text("Unable to retrieve VM usage.")
 
 
 async def _get_snapshots(vm_id):
@@ -1015,6 +1060,7 @@ def create_application():
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("docker", docker_command))
     application.add_handler(CommandHandler("health", health_command))
+    application.add_handler(CommandHandler("vmusage", vmusage_command))
     application.add_handler(CommandHandler("vms", vms_command))
     application.add_handler(CommandHandler("snapshot", snapshot_command))
     application.add_handler(CommandHandler("alerts", alerts_command))

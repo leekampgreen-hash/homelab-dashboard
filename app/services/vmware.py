@@ -465,6 +465,53 @@ def get_virtual_machine(vm_identifier):
         Disconnect(si)
 
 
+def get_vm_metrics(vm_name):
+    si = connect_esxi()
+
+    try:
+        vm = _get_vm_from_content(si.RetrieveContent(), vm_name)
+        if vm.name != vm_name:
+            raise ValueError("Virtual machine not found")
+
+        quick_stats = getattr(vm.runtime, "quickStats", None)
+        if quick_stats is None:
+            quick_stats = getattr(vm.summary, "quickStats", None)
+        cpu_usage_mhz = getattr(quick_stats, "overallCpuUsage", None)
+        cpu_capacity_mhz = getattr(vm.runtime, "maxCpuUsage", None)
+        memory_usage_mb = getattr(quick_stats, "guestMemoryUsage", None)
+        memory_capacity_mb = getattr(vm.config.hardware, "memoryMB", None)
+
+        cpu_usage_percent = None
+        if (
+            isinstance(cpu_usage_mhz, (int, float))
+            and isinstance(cpu_capacity_mhz, (int, float))
+            and cpu_capacity_mhz > 0
+        ):
+            cpu_usage_percent = round((cpu_usage_mhz / cpu_capacity_mhz) * 100, 1)
+
+        memory_usage_percent = None
+        if (
+            isinstance(memory_usage_mb, (int, float))
+            and isinstance(memory_capacity_mb, (int, float))
+            and memory_capacity_mb > 0
+        ):
+            memory_usage_percent = round(
+                (memory_usage_mb / memory_capacity_mb) * 100, 1
+            )
+
+        return {
+            "name": vm.name,
+            "power_state": str(vm.runtime.powerState),
+            "cpu_usage_mhz": cpu_usage_mhz,
+            "cpu_usage_percent": cpu_usage_percent,
+            "memory_usage_mb": memory_usage_mb,
+            "memory_usage_percent": memory_usage_percent,
+            "memory_capacity_mb": memory_capacity_mb,
+        }
+    finally:
+        Disconnect(si)
+
+
 def _submit_vm_action(vm_id, action, submit, valid_states, requester="unknown"):
     si = connect_esxi()
 

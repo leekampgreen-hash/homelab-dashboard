@@ -11,6 +11,7 @@ from services.pending_events import create_pending_event
 from services.vmware import (
     create_snapshot,
     delete_snapshot,
+    get_vm_metrics,
     list_snapshots,
     list_virtual_machines,
     power_vm,
@@ -119,6 +120,16 @@ async def api_vms():
         return {"success": True, "data": list_virtual_machines()}
     except Exception as exc:
         raise vmware_error("Unable to list virtual machines", "List virtual machines", exc)
+
+
+@app.get("/api/vm/{vm_name}/metrics")
+async def api_vm_metrics(vm_name: str):
+    try:
+        return {"success": True, "data": get_vm_metrics(vm_name)}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise vmware_error("Unable to retrieve VM metrics", "Get VM metrics", exc)
 
 
 @app.post("/api/vm/{vm_id}/poweron")
