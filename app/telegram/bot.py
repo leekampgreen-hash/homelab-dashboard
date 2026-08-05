@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import time
+import uuid
 from datetime import datetime
 from functools import wraps
 from urllib.parse import quote
@@ -29,10 +30,12 @@ ALLOWED_USER_IDS = set()
 VM_SESSIONS = {}
 SNAPSHOT_SESSIONS = {}
 ALERT_SESSIONS = {}
+VM_USAGE_SELECTIONS = {}
 VM_SESSION_TTL_SECONDS = 5 * 60
 ALERT_SESSION_TTL_SECONDS = 5 * 60
 VM_TASK_TIMEOUT_SECONDS = 30
 VM_TASK_POLL_INTERVAL_SECONDS = 2
+VM_USAGE_SELECTION_TTL_SECONDS = 15
 STAGE_SELECT_VM = "select_vm"
 STAGE_SELECT_ACTION = "select_action"
 STAGE_CONFIRM = "confirm"
@@ -277,6 +280,18 @@ def _metric_value(value):
     return "--"
 
 
+def _get_vmusage_selection(user_id, token):
+    selection = VM_USAGE_SELECTIONS.get(user_id)
+    if (
+        selection is None
+        or selection["token"] != token
+        or time.monotonic() >= selection["expires_at"]
+    ):
+        VM_USAGE_SELECTIONS.pop(user_id, None)
+        return None
+    return selection
+
+
 def _vm_metrics_text(metrics, fallback_name):
     memory_usage = _metric_value(metrics.get("memory_usage_mb"))
     memory_capacity = _metric_value(metrics.get("memory_capacity_mb"))
@@ -297,15 +312,24 @@ def _vm_metrics_text(metrics, fallback_name):
 @require_authorized_user
 async def vmusage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        vms = await _get_vms()
+        vms = [
+            vm for vm in await _get_vms()
+            if vm.get("power_state") == "poweredOn"
+        ]
         if not vms:
-            await update.message.reply_text("No virtual machines found.")
+            await update.message.reply_text("No powered-on virtual machines found.")
             return
+        token = uuid.uuid4().hex[:12]
+        VM_USAGE_SELECTIONS[update.effective_user.id] = {
+            "token": token,
+            "expires_at": time.monotonic() + VM_USAGE_SELECTION_TTL_SECONDS,
+            "vm_ids": {vm["id"] for vm in vms},
+        }
         keyboard = [
             [
                 InlineKeyboardButton(
                     vm.get("name", "Unnamed VM")[:64],
-                    callback_data=f"vmusage:{vm['id']}",
+                    callback_data=f"vmusage:{token}:{vm['id']}",
                 )
             ]
             for vm in vms
@@ -322,7 +346,20 @@ async def vmusage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def vmusage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    _, _, vm_id = (query.data or "").partition(":")
+    callback_parts = (query.data or "").split(":", 2)
+    if len(callback_parts) != 3:
+        await query.edit_message_text(
+            "VM selection timeout. Please run /vmusage again."
+        )
+        return
+    _, token, vm_id = callback_parts
+    selection = _get_vmusage_selection(update.effective_user.id, token)
+    if selection is None or vm_id not in selection["vm_ids"]:
+        await query.edit_message_text(
+            "VM selection timeout. Please run /vmusage again."
+        )
+        return
+    VM_USAGE_SELECTIONS.pop(update.effective_user.id, None)
     try:
         vm = next((vm for vm in await _get_vms() if vm["id"] == vm_id), None)
         if vm is None:
