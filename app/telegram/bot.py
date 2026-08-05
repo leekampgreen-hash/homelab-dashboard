@@ -8,9 +8,10 @@ from urllib.parse import quote
 
 import httpx
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -109,7 +110,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/status - Check dashboard status\n"
         "/docker - Show Docker container status\n"
         "/health - Show homelab health\n"
-        "/vmusage <VM_NAME> - Show VM runtime usage\n"
+        "/vmusage - Show VM runtime usage\n"
         "/vms - Control a virtual machine\n"
         "/snapshot - Manage VM snapshots\n"
         "/alerts - Configure alert notifications"
@@ -276,42 +277,74 @@ def _metric_value(value):
     return "--"
 
 
+def _vm_metrics_text(metrics, fallback_name):
+    memory_usage = _metric_value(metrics.get("memory_usage_mb"))
+    memory_capacity = _metric_value(metrics.get("memory_capacity_mb"))
+    cpu_percent = _metric_value(metrics.get("cpu_usage_percent"))
+    memory_percent = _metric_value(metrics.get("memory_usage_percent"))
+    return (
+        f"VM: {metrics.get('name', fallback_name)}\n"
+        f"Power: {metrics.get('power_state', '--')}\n\n"
+        "CPU:\n"
+        f"{cpu_percent + '%' if cpu_percent != '--' else '--'} "
+        f"({_metric_value(metrics.get('cpu_usage_mhz'))} MHz)\n\n"
+        "Memory:\n"
+        f"{memory_percent + '%' if memory_percent != '--' else '--'} "
+        f"({memory_usage} MB / {memory_capacity} MB)"
+    )
+
+
 @require_authorized_user
 async def vmusage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /vmusage VM_NAME")
-        return
-
-    vm_name = " ".join(context.args).strip()
     try:
+        vms = await _get_vms()
+        if not vms:
+            await update.message.reply_text("No virtual machines found.")
+            return
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    vm.get("name", "Unnamed VM")[:64],
+                    callback_data=f"vmusage:{vm['id']}",
+                )
+            ]
+            for vm in vms
+        ]
+        await update.message.reply_text(
+            "Select a virtual machine:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        await update.message.reply_text("Unable to retrieve the virtual machine list.")
+
+
+@require_authorized_user
+async def vmusage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, _, vm_id = (query.data or "").partition(":")
+    try:
+        vm = next((vm for vm in await _get_vms() if vm["id"] == vm_id), None)
+        if vm is None:
+            await query.edit_message_text("VM is no longer available.")
+            return
+        vm_name = vm.get("name")
+        if not vm_name:
+            raise ValueError("VM name unavailable")
         payload = await _dashboard_json(
             f"/api/vm/{quote(vm_name, safe='')}/metrics"
         )
         metrics = payload.get("data")
         if payload.get("success") is not True or not isinstance(metrics, dict):
             raise ValueError("Invalid metrics response")
-
-        memory_usage = _metric_value(metrics.get("memory_usage_mb"))
-        memory_capacity = _metric_value(metrics.get("memory_capacity_mb"))
-        cpu_percent = _metric_value(metrics.get("cpu_usage_percent"))
-        memory_percent = _metric_value(metrics.get("memory_usage_percent"))
-        await update.message.reply_text(
-            f"VM: {metrics.get('name', vm_name)}\n"
-            f"Power: {metrics.get('power_state', '--')}\n\n"
-            "CPU:\n"
-            f"{cpu_percent + '%' if cpu_percent != '--' else '--'} "
-            f"({_metric_value(metrics.get('cpu_usage_mhz'))} MHz)\n\n"
-            "Memory:\n"
-            f"{memory_percent + '%' if memory_percent != '--' else '--'} "
-            f"({memory_usage} MB / {memory_capacity} MB)"
-        )
+        await query.edit_message_text(_vm_metrics_text(metrics, vm_name))
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
-            await update.message.reply_text("VM not found.")
+            await query.edit_message_text("VM not found.")
         else:
-            await update.message.reply_text("Unable to retrieve VM usage.")
+            await query.edit_message_text("Unable to retrieve VM usage.")
     except (httpx.HTTPError, ValueError, TypeError, AttributeError):
-        await update.message.reply_text("Unable to retrieve VM usage.")
+        await query.edit_message_text("Unable to retrieve VM usage.")
 
 
 async def _get_snapshots(vm_id):
@@ -1061,6 +1094,7 @@ def create_application():
     application.add_handler(CommandHandler("docker", docker_command))
     application.add_handler(CommandHandler("health", health_command))
     application.add_handler(CommandHandler("vmusage", vmusage_command))
+    application.add_handler(CallbackQueryHandler(vmusage_callback, pattern=r"^vmusage:"))
     application.add_handler(CommandHandler("vms", vms_command))
     application.add_handler(CommandHandler("snapshot", snapshot_command))
     application.add_handler(CommandHandler("alerts", alerts_command))
